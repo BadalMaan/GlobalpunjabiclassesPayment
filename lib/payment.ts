@@ -4,7 +4,7 @@ import { makeInvoicePdf } from "./invoice";
 import { sendEmail, paymentSuccessEmail } from "./email";
 import { monthLabel } from "./fees";
 
-export const PAYMENT_METHODS = ["RAZORPAY", "PAYPAL", "WISE", "PAYONEER", "REMITLY", "BANK_TRANSFER", "UPI"] as const;
+export const PAYMENT_METHODS = ["RAZORPAY", "PAYPAL", "WISE", "BANK_TRANSFER", "UPI"] as const;
 export type PaymentMethod = typeof PAYMENT_METHODS[number];
 
 export function normalizeMoney(value: unknown) {

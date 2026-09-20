@@ -3,7 +3,7 @@ import {supabaseAdmin} from "@/lib/supabase";
 import {getAdminSession} from "@/lib/auth";
 import {PAYMENT_METHODS} from "@/lib/payment";
 
-const manual = new Set(["WISE","PAYONEER","REMITLY","BANK_TRANSFER","UPI"]);
+const manual = new Set(["WISE","PAYPAL","BANK_TRANSFER","UPI"]);
 export async function POST(req:Request){
   const body=await req.json();
   if(!body.token || !manual.has(body.method) || !body.reference?.trim()) return NextResponse.json({error:"Payment method and reference are required"},{status:400});

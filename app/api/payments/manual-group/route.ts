@@ -1,3 +1,3 @@
 import {NextResponse} from "next/server";import {supabaseAdmin} from "@/lib/supabase";
-const manual=new Set(["WISE","PAYONEER","REMITLY","BANK_TRANSFER","UPI"]);
+const manual=new Set(["WISE","PAYPAL","BANK_TRANSFER","UPI"]);
 export async function POST(req:Request){const body=await req.json();if(!body.token||!manual.has(body.method)||!body.reference?.trim())return NextResponse.json({error:"Payment method and reference are required"},{status:400});const {data:g}=await supabaseAdmin.from("payment_groups").select("id,status").eq("secure_token",body.token).single();if(!g)return NextResponse.json({error:"Invalid link"},{status:404});if(g.status==="PAID")return NextResponse.json({ok:true});const {error}=await supabaseAdmin.from("payment_groups").update({status:"VERIFYING",payment_method:body.method,payment_reference:body.reference.trim()}).eq("id",g.id);if(error)return NextResponse.json({error:error.message},{status:400});return NextResponse.json({ok:true});}

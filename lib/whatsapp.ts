@@ -25,17 +25,17 @@ export async function sendWhatsAppPaymentLink(input: {
   }
 
   // Business-initiated WhatsApp messages should use an approved template.
-  // Template body variables: 1=student(s), 2=fee month, 3=amount, 4=payment URL.
+  // Approved template uses named body variables: student_name, fee_period, monthly_fee, payment_link.
   const response = await fetch(graphUrl(), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       messaging_product: "whatsapp", to: phone, type: "template",
       template: { name: template, language: { code: language }, components: [{ type: "body", parameters: [
-        { type: "text", text: input.studentNames.join(", ") },
-        { type: "text", text: input.feeMonth },
-        { type: "text", text: `${input.currency} ${input.total}` },
-        { type: "text", text: input.paymentUrl }
+        { type: "text", parameter_name: "student_name", text: input.studentNames.join(", ") },
+        { type: "text", parameter_name: "fee_period", text: input.feeMonth },
+        { type: "text", parameter_name: "monthly_fee", text: `${input.currency} ${input.total}` },
+        { type: "text", parameter_name: "payment_link", text: input.paymentUrl }
       ] }] }
     })
   });
