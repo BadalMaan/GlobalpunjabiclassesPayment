@@ -4,6 +4,11 @@ import {useEffect,useState} from "react";
 
 declare global { interface Window { Razorpay?: any } }
 
+function providerDescription(invoice:any){
+  const names=(invoice.studentNames||[]).join(" & ");
+  return `Global Punjabi Classes - ${names} - ${invoice.month}`;
+}
+
 export default function PaymentClient({invoice,config}:{invoice:any,config:any}){
  const [method,setMethod]=useState<string|null>(null);
  const [busy,setBusy]=useState(false); const [message,setMessage]=useState("");
@@ -12,9 +17,38 @@ export default function PaymentClient({invoice,config}:{invoice:any,config:any})
  const [progress,setProgress]=useState(invoice.status==="PROCESSING"||invoice.status==="VERIFYING");
  const [razorpayReady,setRazorpayReady]=useState(false);
  const names=invoice.studentNames||[];
- useEffect(()=>{const qs=new URLSearchParams(location.search); if(qs.get("paypal")==="success"&&qs.get("token")){setBusy(true);fetch(invoice.type==="group"?"/api/payments/paypal/group-capture":"/api/payments/paypal/capture",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(invoice.type==="group"?{token:invoice.token,orderId:qs.get("token")}:{token:invoice.token,orderId:qs.get("token")})}).then(async r=>{if(r.ok)setPaid(true);else setMessage((await r.json()).error||"PayPal confirmation failed");}).finally(()=>setBusy(false));}},[invoice.token,invoice.type]);
- async function manualSubmit(){if(!method||!ref.trim()){setMessage("Please enter the payment reference number.");return;}setBusy(true);const endpoint=invoice.type==="group"?"/api/payments/manual-group":"/api/payments/manual";const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token,method,reference:ref.trim()})});const d=await r.json();setBusy(false);if(r.ok){setProgress(true);setMessage("Payment details submitted. The payment is now under verification.");}else setMessage(d.error||"Could not submit payment details.");}
- async function payRazorpay(){setBusy(true);setMessage("");const endpoint=invoice.type==="group"?"/api/payments/razorpay/group-create-order":"/api/payments/razorpay/create-order";const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token})});const d=await r.json();if(!r.ok){setBusy(false);setMessage(d.error||"Could not start Razorpay.");return;}if(!window.Razorpay){setBusy(false);setMessage("Razorpay checkout is still loading. Please try again.");return;}const rz=new window.Razorpay({key:d.key,amount:d.amount,currency:d.currency,name:"Global Punjabi Classes",description:`Monthly fee — ${names.join(" & ")}`,order_id:d.orderId,prefill:{name:"",email:""},theme:{color:"#071f49"},handler:async(response:any)=>{const verify=await fetch(invoice.type==="group"?"/api/payments/razorpay/group-verify":"/api/payments/razorpay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token,...response})});const vd=await verify.json();if(verify.ok){setPaid(true);}else setMessage(vd.error||"Payment verification failed.");setBusy(false);}});rz.on("payment.failed",(e:any)=>{setBusy(false);setMessage(e?.error?.description||"Razorpay payment failed.");});rz.open();}
+ const wiseLink=method==="WISE" ? buildWiseLink(config.wiseOpenPaymentLink, invoice) : "";
+ useEffect(()=>{
+   const qs=new URLSearchParams(location.search);
+   const paypalOrderId=qs.get("token");
+   if(qs.get("paypal")==="success"&&paypalOrderId){
+     setBusy(true);
+     fetch(invoice.type==="group"?"/api/payments/paypal/group-capture":"/api/payments/paypal/capture",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token,orderId:paypalOrderId})})
+       .then(async r=>{if(r.ok)setPaid(true);else setMessage((await r.json()).error||"PayPal confirmation failed");})
+       .finally(()=>setBusy(false));
+   }
+ },[invoice.token,invoice.type]);
+ async function manualSubmit(){
+   if(!method||!ref.trim()){setMessage("Please enter the payment reference number.");return;}
+   setBusy(true);const endpoint=invoice.type==="group"?"/api/payments/manual-group":"/api/payments/manual";
+   const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token,method,reference:ref.trim()})});
+   const d=await r.json();setBusy(false);
+   if(r.ok){setProgress(true);setMessage("Payment details submitted. The payment is now under verification.");}
+   else setMessage(d.error||"Could not submit payment details.");
+ }
+ async function payRazorpay(){
+   setBusy(true);setMessage("");
+   const endpoint=invoice.type==="group"?"/api/payments/razorpay/group-create-order":"/api/payments/razorpay/create-order";
+   const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token})});
+   const d=await r.json();
+   if(!r.ok){setBusy(false);setMessage(d.error||"Could not start Razorpay.");return;}
+   if(!window.Razorpay){setBusy(false);setMessage("Razorpay checkout is still loading. Please try again.");return;}
+   const rz=new window.Razorpay({key:d.key,amount:d.amount,currency:d.currency,name:"Global Punjabi Classes",description:providerDescription(invoice),order_id:d.orderId,prefill:{name:"",email:""},theme:{color:"#071f49"},handler:async(response:any)=>{
+     const verify=await fetch(invoice.type==="group"?"/api/payments/razorpay/group-verify":"/api/payments/razorpay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token,...response})});
+     const vd=await verify.json();if(verify.ok){setPaid(true);}else setMessage(vd.error||"Payment verification failed.");setBusy(false);
+   }});
+   rz.on("payment.failed",(e:any)=>{setBusy(false);setMessage(e?.error?.description||"Razorpay payment failed.");});rz.open();
+ }
  if(paid) return <div className="card payCard" style={{textAlign:"center"}}><div className="successIcon">✓</div><h1>Payment Received</h1><p>Your payment has been successfully received and verified.</p><p style={{color:"#64748b"}}>A receipt/invoice will be sent to the registered email address.</p></div>;
  return <div className="payCard card">
    <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" onLoad={()=>setRazorpayReady(true)}/>
@@ -25,23 +59,27 @@ export default function PaymentClient({invoice,config}:{invoice:any,config:any})
    <div style={{background:"#f6f8fc",borderRadius:20,padding:24,margin:"20px 0"}}><div style={{color:"#64748b",fontSize:13}}>{invoice.month}</div><div className="amount">{invoice.currency} {invoice.amount}</div><span className={`pill ${invoice.status==="PAID"?"paid":progress?"verify":"pending"}`}>{progress?"● IN PROGRESS":"● PENDING"}</span></div>
    <h3>Select a payment method</h3>
    <div className="grid grid2">
-    <div className="method" onClick={()=>setMethod("RAZORPAY")}><b>Razorpay</b><div>Cards, UPI and supported payment methods.</div></div>
-    <div className="method" onClick={()=>setMethod("PAYPAL")}><b>PayPal</b><div>Secure PayPal checkout.</div></div>
-    <div className="method" onClick={()=>setMethod("WISE")}><b>Wise Business</b><div>Use the Wise payment instructions.</div></div>
-    <div className="method" onClick={()=>setMethod("PAYONEER")}><b>Payoneer</b><div>Use the Payoneer payment instructions.</div></div>
-    <div className="method" onClick={()=>setMethod("REMITLY")}><b>Remitly</b><div>Use the Remitly transfer instructions.</div></div>
-    <div className="method" onClick={()=>setMethod("BANK_TRANSFER")}><b>Bank Transfer</b><div>HDFC bank account details.</div></div>
-    <div className="method" onClick={()=>setMethod("UPI")}><b>UPI</b><div>Pay using either listed UPI ID.</div></div>
+    <div className="method" onClick={()=>setMethod("RAZORPAY")}><b>Razorpay</b><div>Secure checkout for supported currencies and payment methods.</div></div>
+    <div className="method" onClick={()=>setMethod("PAYPAL")}><b>PayPal</b><div>Secure PayPal checkout for the invoice amount.</div></div>
+    <div className="method" onClick={()=>setMethod("WISE")}><b>Wise Business</b><div>Amount and currency are prepared from this invoice.</div></div>
+    <div className="method" onClick={()=>setMethod("PAYONEER")}><b>Payoneer</b><div>Open the Payoneer payment request/link for this fee.</div></div>
+    <div className="method" onClick={()=>setMethod("REMITLY")}><b>Remitly</b><div>Use the Remitly instructions provided by Global Punjabi Classes.</div></div>
+    <div className="method" onClick={()=>setMethod("BANK_TRANSFER")}><b>Bank Transfer</b><div>HDFC bank account details with manual verification.</div></div>
+    <div className="method" onClick={()=>setMethod("UPI")}><b>UPI</b><div>Pay using either listed UPI ID with manual verification.</div></div>
    </div>
-   {method==="RAZORPAY" && <div className="notice paymentPanel"><b>Razorpay Secure Checkout</b><p>Proceed to Razorpay. The portal will verify the payment on the server before marking it as received.</p><button className="btn btnGold" disabled={busy||!razorpayReady} onClick={payRazorpay}>{busy?"Opening…":razorpayReady?"PAY SECURELY WITH RAZORPAY →":"Loading secure checkout…"}</button></div>}
-   {method==="PAYPAL" && <div className="notice paymentPanel"><b>PayPal Secure Checkout</b><p>You will be redirected to PayPal. The portal records the payment only after server-side confirmation.</p><button className="btn btnGold" disabled={busy} onClick={async()=>{setBusy(true);const endpoint=invoice.type==="group"?"/api/payments/paypal/group-create-order":"/api/payments/paypal/create-order";const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token})});const d=await r.json();if(!r.ok){setBusy(false);setMessage(d.error||"Could not start PayPal");return;}const approve=d.links?.find((x:any)=>x.rel==="payer-action"||x.rel==="approve")?.href;if(!approve){setBusy(false);setMessage("PayPal approval link was not returned");return;}location.href=approve;}}>{busy?"Opening PayPal…":"PAY WITH PAYPAL →"}</button></div>}
-   {method==="WISE" && <div className="notice paymentPanel"><b>Wise Business</b><p>{config.wisePaymentLink?<>Use the official Wise payment page: <a href={config.wisePaymentLink} target="_blank" rel="noreferrer">Open Wise Payment Page</a></>:"Wise payment instructions will appear here once the Wise Business payment link is configured."}</p><ManualBox method="WISE" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
-   {method==="PAYONEER" && <div className="notice paymentPanel"><b>Payoneer</b><p>{config.payoneerPaymentLink?<>Use the official Payoneer payment page: <a href={config.payoneerPaymentLink} target="_blank" rel="noreferrer">Open Payoneer Payment Page</a></>:"Payoneer payment instructions will appear here once configured."}</p><ManualBox method="PAYONEER" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
-   {method==="REMITLY" && <div className="notice paymentPanel"><b>Remitly</b><p>{config.remitlyInstructions}</p><ManualBox method="REMITLY" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
+   {method==="RAZORPAY" && <div className="notice paymentPanel"><b>Razorpay Secure Checkout</b><p>The portal creates an order for the exact invoice amount and verifies the payment on the server.</p><button className="btn btnGold" disabled={busy||!razorpayReady} onClick={payRazorpay}>{busy?"Opening…":razorpayReady?"PAY SECURELY WITH RAZORPAY →":"Loading secure checkout…"}</button></div>}
+   {method==="PAYPAL" && <div className="notice paymentPanel"><b>PayPal Secure Checkout</b><p>The portal creates an order for the exact invoice amount. Payment is marked received only after server-side confirmation.</p><button className="btn btnGold" disabled={busy} onClick={async()=>{setBusy(true);const endpoint=invoice.type==="group"?"/api/payments/paypal/group-create-order":"/api/payments/paypal/create-order";const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invoice.token})});const d=await r.json();if(!r.ok){setBusy(false);setMessage(d.error||"Could not start PayPal");return;}const approve=d.links?.find((x:any)=>x.rel==="payer-action"||x.rel==="approve")?.href;if(!approve){setBusy(false);setMessage("PayPal approval link was not returned");return;}location.href=approve;}}>{busy?"Opening PayPal…":"PAY WITH PAYPAL →"}</button></div>}
+   {method==="WISE" && <div className="notice paymentPanel"><b>Wise Business</b>{wiseLink?<><p>We prepared the Wise payment for <b>{invoice.currency} {invoice.amount}</b> for <b>{providerDescription(invoice)}</b>.</p><a className="btn btnGold" style={{display:"inline-block",textDecoration:"none"}} href={wiseLink} target="_blank" rel="noreferrer">PAY WITH WISE →</a><p style={{fontSize:12,color:"#64748b",marginTop:12}}>After completing payment, enter the Wise transaction/reference number below so the portal can match it to this invoice.</p></>:<p>Wise is not configured yet. Please contact Global Punjabi Classes.</p>}<ManualBox method="WISE" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
+   {method==="PAYONEER" && <div className="notice paymentPanel"><b>Payoneer</b>{config.payoneerPaymentLink?<><p>Invoice amount: <b>{invoice.currency} {invoice.amount}</b>. Open the Payoneer payment page below and complete the payment for this invoice.</p><a className="btn btnGold" style={{display:"inline-block",textDecoration:"none"}} href={config.payoneerPaymentLink} target="_blank" rel="noreferrer">OPEN PAYONEER →</a><p style={{fontSize:12,color:"#64748b",marginTop:12}}>Payoneer payment links/payment requests are managed in Payoneer. Enter the resulting reference below for verification.</p></>:<p>Payoneer is not configured yet. Please contact Global Punjabi Classes.</p>}<ManualBox method="PAYONEER" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
+   {method==="REMITLY" && <div className="notice paymentPanel"><b>Remitly</b>{config.remitlyPaymentLink&&<a className="btn btnGold" style={{display:"inline-block",textDecoration:"none",marginBottom:12}} href={config.remitlyPaymentLink} target="_blank" rel="noreferrer">OPEN REMITLY →</a>}<p>{config.remitlyInstructions}</p><p><b>Invoice amount:</b> {invoice.currency} {invoice.amount}</p><ManualBox method="REMITLY" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
    {method==="BANK_TRANSFER" && <div className="notice paymentPanel"><b>Bank Transfer</b><div className="bankGrid">{config.banks.map((b:any,i:number)=><div className="bankCard" key={i}><b>{b.name}</b><div>Account Holder: <b>{b.holder}</b></div><div>Account Number: <b>{b.account}</b></div><div>IFSC: <b>{b.ifsc}</b></div>{b.branch&&<div>Branch: <b>{b.branch}</b></div>}{b.type&&<div>Account Type: <b>{b.type}</b></div>}</div>)}</div><ManualBox method="BANK_TRANSFER" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
    {method==="UPI" && <div className="notice paymentPanel"><b>UPI</b>{config.upiIds.map((id:string)=><div className="copyRow" key={id}><span>{id}</span><button className="btn btnGhost" onClick={()=>navigator.clipboard?.writeText(id)}>Copy</button></div>)}<ManualBox method="UPI" refValue={ref} setRef={setRef} submit={manualSubmit} busy={busy}/></div>}
    {message&&<div className="notice" style={{marginTop:18}}>{message}</div>}
    <div className="notice" style={{marginTop:22}}>🔒 This secure link is associated with this invoice only. Payment is marked RECEIVED only after provider/server confirmation or authorized manual verification.</div>
  </div>;
+}
+function buildWiseLink(base:string, invoice:any){
+  if(!base) return "";
+  try{const url=new URL(base);url.searchParams.set("amount",String(invoice.amount));url.searchParams.set("currency",String(invoice.currency));url.searchParams.set("description",providerDescription(invoice).slice(0,200));return url.toString();}catch{return "";}
 }
 function ManualBox({method,refValue,setRef,submit,busy}:{method:string;refValue:string;setRef:(v:string)=>void;submit:()=>void;busy:boolean}){return <div style={{marginTop:16}}><label style={{display:"block",fontSize:13,fontWeight:800,marginBottom:7}}>Payment reference / tracking number</label><input placeholder={`${method} transaction or reference number`} value={refValue} onChange={e=>setRef(e.target.value)} style={{width:"100%",padding:14,borderRadius:12,border:"1px solid #dbe3ee"}}/><button className="btn btnPrimary" style={{marginTop:12}} onClick={submit} disabled={busy}>{busy?"Submitting…":"SUBMIT PAYMENT DETAILS"}</button></div>}

@@ -26,6 +26,14 @@ Production-oriented Next.js + Supabase fee portal for Global Punjabi Classes.
 - Payment events, audit logs and message logs
 - PDF paid invoice generation and email delivery
 
+## Provider-specific payment behavior
+
+- **Wise Business:** set `WISE_OPEN_PAYMENT_LINK` to your Wise Business open payment link. The portal dynamically adds the invoice amount, currency and description to the Wise URL. Wise documents this as a website payment-link pattern.
+- **Payoneer:** set `PAYONEER_PAYMENT_LINK` to the Payoneer payment link/request page you use. The portal shows the exact invoice amount and records the provider reference for verification. Automatic creation of a unique Payoneer request requires whatever API/merchant capability your Payoneer account makes available; the code does not invent an unsupported API.
+- **Remitly:** optionally set `REMITLY_PAYMENT_LINK` if your account provides an appropriate collection/payment link. Otherwise use `REMITLY_INSTRUCTIONS`. Remitly transfers remain in verification until confirmed.
+- **PayPal:** the portal creates an invoice-specific Orders API order, captures it server-side, validates amount/currency, and processes verified webhooks.
+- **Razorpay:** the portal creates an invoice-specific order and verifies it server-side. The current build intentionally allows Razorpay checkout only for INR invoices; foreign-currency invoices should use a provider/account setup that explicitly supports those currencies.
+
 ## Important production boundary
 
 The code never treats a browser success screen as proof of payment. Online gateways must be verified server-side. Bank/UPI and other external transfers only become RECEIVED automatically when a reliable provider/bank integration confirms them; otherwise they remain IN PROGRESS until an authorized operator verifies them.
@@ -62,8 +70,9 @@ Payment providers:
 
 - PayPal: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV`
 - Razorpay: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`
-- Wise: only after your Wise Business API access is approved/configured
-- Payoneer: only after the required API/merchant access is available
+- Wise: `WISE_OPEN_PAYMENT_LINK`
+- Payoneer: `PAYONEER_PAYMENT_LINK`
+- Remitly: `REMITLY_PAYMENT_LINK` (optional) and `REMITLY_INSTRUCTIONS`
 
 WhatsApp Business:
 
@@ -78,8 +87,9 @@ Receiving details:
 - `BANK2_*`
 - `UPI_ID_1`
 - `UPI_ID_2`
-- `WISE_PAYMENT_LINK`
+- `WISE_OPEN_PAYMENT_LINK`
 - `PAYONEER_PAYMENT_LINK`
+- `REMITLY_PAYMENT_LINK` (optional)
 - `REMITLY_INSTRUCTIONS`
 
 ### 3. Webhook URLs
@@ -92,9 +102,6 @@ PayPal:
 
 `https://YOUR_DOMAIN/api/payments/paypal/webhook`
 
-Wise, once enabled for your account:
-
-`https://YOUR_DOMAIN/api/payments/wise/webhook`
 
 ### 4. Build
 
