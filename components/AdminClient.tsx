@@ -84,7 +84,7 @@ export default function AdminClient({
   initialInvoices,
   month,
 }: AdminClientProps) {
-  const [students] = useState<AnyRecord[]>(
+  const [students, setStudents] = useState<AnyRecord[]>(
     initialStudents || []
   );
 
@@ -111,6 +111,113 @@ export default function AdminClient({
     useState<string | null>(null);
 
   const [toast, setToast] = useState("");
+
+  const [addStudentOpen, setAddStudentOpen] = useState(false);
+  const [addingStudent, setAddingStudent] = useState(false);
+
+  const [studentForm, setStudentForm] = useState({
+    serial_number: "",
+    student_name: "",
+    age: "",
+    country: "USA",
+    timing: "",
+    days: "",
+    monthly_fee: "",
+    parent_name: "",
+    parent_email: "",
+    parent_phone: "",
+    whatsapp_phone: "",
+    gender: "",
+    teacher_name: "",
+    groups: [] as string[],
+    currency: "USD",
+    active: true,
+  });
+
+  function updateStudentForm(field: string, value: any) {
+    setStudentForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function toggleStudentGroup(groupName: string) {
+    setStudentForm((current) => ({
+      ...current,
+      groups: current.groups.includes(groupName)
+        ? current.groups.filter((item) => item !== groupName)
+        : [...current.groups, groupName],
+    }));
+  }
+
+  async function addStudent() {
+    if (
+      !studentForm.serial_number.trim() ||
+      !studentForm.student_name.trim() ||
+      !studentForm.country ||
+      !studentForm.currency ||
+      !studentForm.monthly_fee
+    ) {
+      showToast(
+        "Please fill Student Number, Student Name, Country, Currency and Fee."
+      );
+      return;
+    }
+
+    setAddingStudent(true);
+
+    try {
+      const response = await fetch("/api/admin/students", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...studentForm,
+          age: studentForm.age ? Number(studentForm.age) : null,
+          monthly_fee: Number(studentForm.monthly_fee),
+          groups: studentForm.groups,
+        }),
+      });
+
+      const data = await readJson(response);
+
+      if (!response.ok) {
+        showToast(data.error || "Could not add student.");
+        return;
+      }
+
+      if (data.student) {
+        setStudents((current) => [data.student, ...current]);
+      }
+
+      setStudentForm({
+        serial_number: "",
+        student_name: "",
+        age: "",
+        country: "USA",
+        timing: "",
+        days: "",
+        monthly_fee: "",
+        parent_name: "",
+        parent_email: "",
+        parent_phone: "",
+        whatsapp_phone: "",
+        gender: "",
+        teacher_name: "",
+        groups: [],
+        currency: "USD",
+        active: true,
+      });
+
+      setAddStudentOpen(false);
+      showToast("Student added successfully.");
+    } catch {
+      showToast("Could not connect to the student service.");
+    } finally {
+      setAddingStudent(false);
+    }
+  }
 
   const teachers = useMemo(() => {
     return Array.from(
@@ -784,12 +891,21 @@ export default function AdminClient({
             </h2>
           </div>
 
-          <button
-            className="btn btnGold"
-            onClick={exportCsv}
-          >
-            Export CSV
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              className="btn btnPrimary"
+              onClick={() => setAddStudentOpen(true)}
+            >
+              + Add Student
+            </button>
+
+            <button
+              className="btn btnGold"
+              onClick={exportCsv}
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
 
         <div className="filterGrid">
@@ -1228,6 +1344,218 @@ export default function AdminClient({
           </div>
         </div>
       </section>
+
+      {addStudentOpen && (
+        <div className="modalBackdrop">
+          <div className="modal card" style={{ maxWidth: 900 }}>
+            <div className="eyebrow">STUDENT MANAGEMENT</div>
+            <h2>Add Student</h2>
+
+            <div className="filterGrid" style={{ marginTop: 20 }}>
+              <input
+                placeholder="Student Number *"
+                value={studentForm.serial_number}
+                onChange={(event) =>
+                  updateStudentForm("serial_number", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="Student Name *"
+                value={studentForm.student_name}
+                onChange={(event) =>
+                  updateStudentForm("student_name", event.target.value)
+                }
+              />
+
+              <input
+                type="number"
+                placeholder="Age"
+                value={studentForm.age}
+                onChange={(event) =>
+                  updateStudentForm("age", event.target.value)
+                }
+              />
+
+              <select
+                value={studentForm.gender}
+                onChange={(event) =>
+                  updateStudentForm("gender", event.target.value)
+                }
+              >
+                <option value="">Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+
+              <select
+                value={studentForm.country}
+                onChange={(event) =>
+                  updateStudentForm("country", event.target.value)
+                }
+              >
+                {COUNTRIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={studentForm.currency}
+                onChange={(event) =>
+                  updateStudentForm("currency", event.target.value)
+                }
+              >
+                {CURRENCIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Monthly Fee *"
+                value={studentForm.monthly_fee}
+                onChange={(event) =>
+                  updateStudentForm("monthly_fee", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="Class Timing"
+                value={studentForm.timing}
+                onChange={(event) =>
+                  updateStudentForm("timing", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="Days"
+                value={studentForm.days}
+                onChange={(event) =>
+                  updateStudentForm("days", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="Teacher Name"
+                value={studentForm.teacher_name}
+                onChange={(event) =>
+                  updateStudentForm("teacher_name", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="Parent Name"
+                value={studentForm.parent_name}
+                onChange={(event) =>
+                  updateStudentForm("parent_name", event.target.value)
+                }
+              />
+
+              <input
+                type="email"
+                placeholder="Parent Email"
+                value={studentForm.parent_email}
+                onChange={(event) =>
+                  updateStudentForm("parent_email", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="Parent Phone"
+                value={studentForm.parent_phone}
+                onChange={(event) =>
+                  updateStudentForm("parent_phone", event.target.value)
+                }
+              />
+
+              <input
+                placeholder="WhatsApp Number"
+                value={studentForm.whatsapp_phone}
+                onChange={(event) =>
+                  updateStudentForm("whatsapp_phone", event.target.value)
+                }
+              />
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <b>Groups</b>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 10,
+                }}
+              >
+                {GROUPS.map((item) => (
+                  <label
+                    key={item}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      padding: "10px 14px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={studentForm.groups.includes(item)}
+                      onChange={() => toggleStudentGroup(item)}
+                    />
+                    {item}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 18,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={studentForm.active}
+                onChange={(event) =>
+                  updateStudentForm("active", event.target.checked)
+                }
+              />
+              Student is Active
+            </label>
+
+            <div className="modalActions">
+              <button
+                className="btn btnGhost"
+                onClick={() => setAddStudentOpen(false)}
+                disabled={addingStudent}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="btn btnGold"
+                onClick={addStudent}
+                disabled={addingStudent}
+              >
+                {addingStudent ? "Adding..." : "Add Student"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {processView && (
         <div className="modalBackdrop">
