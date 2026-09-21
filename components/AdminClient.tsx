@@ -114,6 +114,10 @@ export default function AdminClient({
 
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [addingStudent, setAddingStudent] = useState(false);
+  const [editingStudent, setEditingStudent] =
+    useState<AnyRecord | null>(null);
+  const [deletingStudent, setDeletingStudent] =
+    useState<string | null>(null);
 
   const [studentForm, setStudentForm] = useState({
     serial_number: "",
@@ -148,6 +152,223 @@ export default function AdminClient({
         ? current.groups.filter((item) => item !== groupName)
         : [...current.groups, groupName],
     }));
+  }
+
+  function openAddStudent() {
+    setEditingStudent(null);
+    setStudentForm({
+      serial_number: "",
+      student_name: "",
+      age: "",
+      country: "USA",
+      timing: "",
+      days: "",
+      monthly_fee: "",
+      parent_name: "",
+      parent_email: "",
+      parent_phone: "",
+      whatsapp_phone: "",
+      gender: "",
+      teacher_name: "",
+      groups: [],
+      currency: "USD",
+      active: true,
+    });
+    setAddStudentOpen(true);
+  }
+
+  function openEditStudent(student: AnyRecord) {
+    setEditingStudent(student);
+    setStudentForm({
+      serial_number: String(student.serial_number ?? ""),
+      student_name: String(student.student_name ?? ""),
+      age:
+        student.age === null ||
+        student.age === undefined
+          ? ""
+          : String(student.age),
+      country: String(student.country ?? "USA"),
+      timing: String(student.timing ?? ""),
+      days: String(student.days ?? ""),
+      monthly_fee:
+        student.monthly_fee === null ||
+        student.monthly_fee === undefined
+          ? ""
+          : String(student.monthly_fee),
+      parent_name: String(student.parent_name ?? ""),
+      parent_email: String(student.parent_email ?? ""),
+      parent_phone: String(student.parent_phone ?? ""),
+      whatsapp_phone: String(student.whatsapp_phone ?? ""),
+      gender: String(student.gender ?? ""),
+      teacher_name: String(student.teacher_name ?? ""),
+      groups: Array.isArray(student.groups)
+        ? student.groups
+        : [],
+      currency: String(student.currency ?? "USD"),
+      active: student.active !== false,
+    });
+    setAddStudentOpen(true);
+  }
+
+  async function updateStudent() {
+    if (!editingStudent?.id) return;
+
+    if (
+      !studentForm.serial_number.trim() ||
+      !studentForm.student_name.trim() ||
+      !studentForm.country ||
+      !studentForm.currency ||
+      !studentForm.monthly_fee
+    ) {
+      showToast(
+        "Please fill Student Number, Student Name, Country, Currency and Fee."
+      );
+      return;
+    }
+
+    setAddingStudent(true);
+
+    try {
+      const response = await fetch(
+        `/api/admin/students/${editingStudent.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...studentForm,
+            age: studentForm.age
+              ? Number(studentForm.age)
+              : null,
+            monthly_fee: Number(
+              studentForm.monthly_fee
+            ),
+            groups: studentForm.groups,
+          }),
+        }
+      );
+
+      const data = await readJson(response);
+
+      if (!response.ok) {
+        showToast(
+          data.error || "Could not update student."
+        );
+        return;
+      }
+
+      if (data.student) {
+        setStudents((current) =>
+          current.map((item) =>
+            item.id === editingStudent.id
+              ? data.student
+              : item
+          )
+        );
+      }
+
+      setAddStudentOpen(false);
+      setEditingStudent(null);
+      showToast("Student updated successfully.");
+    } catch {
+      showToast(
+        "Could not connect to the student service."
+      );
+    } finally {
+      setAddingStudent(false);
+    }
+  }
+
+  async function deleteStudent(student: AnyRecord) {
+    if (!student?.id) return;
+
+    const confirmed = window.confirm(
+      `Delete ${student.student_name || "this student"} permanently? This will also remove this student's fee invoices and message records.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingStudent(student.id);
+
+    try {
+      const response = await fetch(
+        `/api/admin/students/${student.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await readJson(response);
+
+      if (!response.ok) {
+        showToast(
+          data.error || "Could not delete student."
+        );
+        return;
+      }
+
+      setStudents((current) =>
+        current.filter(
+          (item) => item.id !== student.id
+        )
+      );
+
+      setInvoices((current) =>
+        current.filter(
+          (invoice) =>
+            invoice.student_id !== student.id
+        )
+      );
+
+      showToast("Student deleted successfully.");
+    } catch {
+      showToast(
+        "Could not connect to the student service."
+      );
+    } finally {
+      setDeletingStudent(null);
+    }
+  }
+
+  async function copyFeeLink(
+    invoice: AnyRecord | undefined
+  ) {
+    if (!invoice?.id) {
+      showToast(
+        "No payment invoice is available for this student."
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/admin/payment-links/${invoice.id}`,
+        {
+          method: "GET",
+        }
+      );
+
+      const data = await readJson(response);
+
+      if (!response.ok || !data.paymentUrl) {
+        showToast(
+          data.error ||
+            "Fee link is not available yet. Please use Send Link first."
+        );
+        return;
+      }
+
+      await navigator.clipboard.writeText(
+        data.paymentUrl
+      );
+
+      showToast("Fee payment link copied.");
+    } catch {
+      showToast(
+        "Could not copy the fee payment link."
+      );
+    }
   }
 
   async function addStudent(keepOpen = false) {
@@ -453,7 +674,7 @@ export default function AdminClient({
       emailStatus === "QUEUED" &&
       whatsappStatus === "QUEUED"
     ) {
-      return "Payment link created successfully. Email and WhatsApp delivery queued.";
+      return "Payment link created. Email and WhatsApp delivery queued.";
     }
 
     if (
@@ -960,7 +1181,7 @@ export default function AdminClient({
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               className="btn btnPrimary"
-              onClick={() => setAddStudentOpen(true)}
+              onClick={openAddStudent}
             >
               + Add Student
             </button>
@@ -1277,20 +1498,60 @@ export default function AdminClient({
                         </button>
 
                         {invoice && (
-                          <button
-                            className="btn btnGhost btnSmall"
-                            onClick={() =>
-                              setProcessView(
-                                {
-                                  invoice,
-                                  student,
-                                }
-                              )
-                            }
-                          >
-                            View Process
-                          </button>
+                          <>
+                            <button
+                              className="btn btnGhost btnSmall"
+                              onClick={() =>
+                                copyFeeLink(invoice)
+                              }
+                            >
+                              Copy Payment Link
+                            </button>
+
+                            <button
+                              className="btn btnGhost btnSmall"
+                              onClick={() =>
+                                setProcessView(
+                                  {
+                                    invoice,
+                                    student,
+                                  }
+                                )
+                              }
+                            >
+                              View Process
+                            </button>
+                          </>
                         )}
+
+                        <button
+                          className="btn btnGhost btnSmall"
+                          onClick={() =>
+                            openEditStudent(student)
+                          }
+                          disabled={
+                            deletingStudent ===
+                            student.id
+                          }
+                        >
+                          Edit Student
+                        </button>
+
+                        <button
+                          className="btn btnGhost btnSmall"
+                          onClick={() =>
+                            deleteStudent(student)
+                          }
+                          disabled={
+                            deletingStudent ===
+                            student.id
+                          }
+                        >
+                          {deletingStudent ===
+                          student.id
+                            ? "Deleting…"
+                            : "Delete Student"}
+                        </button>
 
                         {invoice?.status ===
                           "VERIFYING" && (
@@ -1657,10 +1918,15 @@ export default function AdminClient({
           <div className="modal card studentModal">
             <div className="studentModalHeader">
               <div className="eyebrow">STUDENT MANAGEMENT</div>
-              <h2>Add Student</h2>
+              <h2>
+                {editingStudent
+                  ? "Edit Student"
+                  : "Add Student"}
+              </h2>
               <p>
-                Enter the student details below. You can add one student or keep
-                this form open and continue adding students.
+                {editingStudent
+                  ? "Update the student details below."
+                  : "Enter the student details below. You can add one student or keep this form open and continue adding students."}
               </p>
             </div>
 
@@ -1961,32 +2227,41 @@ export default function AdminClient({
               <div className="studentFooterActions">
                 <button
                   className="btn btnGhost"
-                  onClick={() =>
-                    setAddStudentOpen(false)
-                  }
+                  onClick={() => {
+                    setAddStudentOpen(false);
+                    setEditingStudent(null);
+                  }}
                   disabled={addingStudent}
                 >
                   Cancel
                 </button>
 
-                <button
-                  className="btn btnPrimary"
-                  onClick={() => addStudent(true)}
-                  disabled={addingStudent}
-                >
-                  {addingStudent
-                    ? "Saving..."
-                    : "Add & Add Another"}
-                </button>
+                {!editingStudent && (
+                  <button
+                    className="btn btnPrimary"
+                    onClick={() => addStudent(true)}
+                    disabled={addingStudent}
+                  >
+                    {addingStudent
+                      ? "Saving..."
+                      : "Add & Add Another"}
+                  </button>
+                )}
 
                 <button
                   className="btn btnGold"
-                  onClick={() => addStudent(false)}
+                  onClick={() =>
+                    editingStudent
+                      ? updateStudent()
+                      : addStudent(false)
+                  }
                   disabled={addingStudent}
                 >
                   {addingStudent
                     ? "Saving..."
-                    : "Add Student"}
+                    : editingStudent
+                      ? "Save Changes"
+                      : "Add Student"}
                 </button>
               </div>
             </div>
