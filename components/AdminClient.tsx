@@ -1,38 +1,1472 @@
 "use client";
-import {useMemo,useState} from "react";
 
-const CURRENCIES=["USD","AUD","CAD","NZD","GBP","EUR","INR"];
-const COUNTRIES=["USA","Australia","Canada","New Zealand","UK","Europe","India"];
-const GROUPS=["Speaking Group","Writing Group","Reading Group"];
+import { useMemo, useState } from "react";
 
-function statusLabel(s:string){return s==="PAID"?"RECEIVED":(s==="PROCESSING"||s==="VERIFYING")?"IN PROGRESS":s;}
-function statusClass(s:string){return s==="PAID"?"statusReceived":(s==="PROCESSING"||s==="VERIFYING")?"statusProgress":s==="FAILED"||s==="REFUNDED"?"statusFailed":"statusPending";}
+type AnyRecord = Record<string, any>;
 
-export default function AdminClient({initialStudents,initialInvoices,month}:{initialStudents:any[],initialInvoices:any[],month:string}){
- const [students]=useState(initialStudents); const [invoices,setInvoices]=useState(initialInvoices); const [q,setQ]=useState(""); const [country,setCountry]=useState("ALL"); const [currency,setCurrency]=useState("ALL"); const [status,setStatus]=useState("ALL"); const [teacher,setTeacher]=useState("ALL"); const [group,setGroup]=useState("ALL"); const [gender,setGender]=useState("ALL"); const [merge,setMerge]=useState<any|null>(null); const [processView,setProcessView]=useState<any|null>(null); const [sending,setSending]=useState<string|null>(null); const [toast,setToast]=useState("");
- const teachers=useMemo(()=>Array.from(new Set(students.map(s=>s.teacher_name).filter(Boolean))).sort(),[students]);
- const filteredStudents=useMemo(()=>students.filter(s=>{const hay=`${s.student_name} ${s.age||""} ${s.days||""} ${s.teacher_name||""} ${s.country||""} ${s.parent_name||""} ${s.parent_email||""}`.toLowerCase();return (!q||hay.includes(q.toLowerCase()))&&(country==="ALL"||s.country===country)&&(currency==="ALL"||s.currency===currency)&&(teacher==="ALL"||s.teacher_name===teacher)&&(gender==="ALL"||s.gender===gender)&&(group==="ALL"||((s.groups||[]).map((x:string)=>x.toLowerCase()).includes(group.toLowerCase())))}),[students,q,country,currency,teacher,gender,group]);
- const invoiceMap=useMemo(()=>new Map(invoices.map(i=>[i.student_id,i])),[invoices]);
- const visibleRows=useMemo(()=>filteredStudents.map(s=>({student:s,invoice:invoiceMap.get(s.id)})).filter((row:any)=>status==="ALL"||row.invoice?.status===status),[filteredStudents,invoiceMap,status]);
- const counts={total:students.length,active:students.filter(s=>s.active).length,inactive:students.filter(s=>!s.active).length,received:invoices.filter(i=>i.status==="PAID").length,pending:invoices.filter(i=>i.status==="PENDING").length,progress:invoices.filter(i=>i.status==="PROCESSING"||i.status==="VERIFYING").length};
- const teacherStats=useMemo(()=>teachers.map(t=>({name:t,count:students.filter(s=>s.teacher_name===t).length,students:students.filter(s=>s.teacher_name===t).map(s=>s.student_name)})),[students,teachers]);
- const currencyStats=useMemo(()=>CURRENCIES.map(c=>({currency:c,count:students.filter(s=>s.currency===c).length,total:students.filter(s=>s.currency===c).reduce((a,s)=>a+Number(s.monthly_fee||0),0)})),[students]);
- async function sendLinkSeparate(studentId:string){setSending(studentId);setToast("");const r=await fetch("/api/admin/payment-links/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({studentId,month,forceSeparate:true})});const d=await r.json();setSending(null);setToast(r.ok?`Payment link sent separately.`:(d.error||"Could not send link"));}
- async function sendLink(studentId:string){setSending(studentId);setToast("");const r=await fetch("/api/admin/payment-links/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({studentId,month})});const d=await r.json();setSending(null);if(d.needsMergeDecision){setMerge(d);return;}if(r.ok){setToast(`Payment link sent. ${d.whatsapp?.skipped?"WhatsApp is not configured yet.":"Email and WhatsApp processed."}`);}else setToast(d.error||"Could not send link");}
- async function mergeAndSend(){if(!merge)return;setSending(merge.student.id);const checked=Array.from(document.querySelectorAll(".mergeStudentCheckbox:checked")) as HTMLInputElement[];const ids=checked.map(x=>x.value);const r=await fetch("/api/admin/payment-links/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({studentId:merge.student.id,studentIds:ids,mergeConfirmed:true,month})});const d=await r.json();setSending(null);setMerge(null);setToast(r.ok?`Combined payment link sent for ${d.studentIds.length} students.`:(d.error||"Could not send combined link"));}
- async function approveInvoice(id:string){const r=await fetch(`/api/admin/payments/${id}/approve`,{method:"POST"});if(r.ok)setInvoices(xs=>xs.map(x=>x.id===id?{...x,status:"PAID",paid_at:new Date().toISOString()}:x));else setToast("Verification failed");}
- async function approveGroup(id:string){const r=await fetch(`/api/admin/payment-groups/${id}/approve`,{method:"POST"});if(r.ok){setInvoices(xs=>xs.map(x=>x));setToast("Combined payment verified. Refreshing…");location.reload();}else setToast("Verification failed");}
- return <main className="container" style={{padding:"30px 20px 80px"}}>
-  <div className="adminHeader"><div><div className="eyebrow">PRIVATE OPERATOR AREA</div><h1 style={{margin:"6px 0"}}>Global Punjabi Classes — Admin</h1><p style={{color:"#64748b"}}>Fee operations · {new Date(month).toLocaleString("en-US",{month:"long",year:"numeric"})}</p></div><div className="headerActions"><a href="/" className="btn btnGhost">Public Home</a><button className="btn btnGhost" onClick={async()=>{await fetch("/api/admin/logout",{method:"POST"});location.href="/admin/login"}}>Log out</button></div></div>
-  <div className="grid grid4 statsGrid"><div className="card stat"><div className="n">{counts.total}</div><div className="l">Total Students</div></div><div className="card stat"><div className="n">{counts.active}</div><div className="l">Active Students</div></div><div className="card stat"><div className="n">{counts.inactive}</div><div className="l">Not Active</div></div><div className="card stat"><div className="n">{counts.received}</div><div className="l">Received This Month</div></div></div>
-  <div className="grid grid3" style={{marginBottom:18}}><div className="card miniStat"><b>{counts.pending}</b><span>Pending payments</span></div><div className="card miniStat"><b>{counts.progress}</b><span>In progress</span></div><div className="card miniStat"><b>{teachers.length}</b><span>Teachers</span></div></div>
+type AdminClientProps = {
+  initialStudents: AnyRecord[];
+  initialInvoices: AnyRecord[];
+  month: string;
+};
 
-  <section className="card dashboardSection"><div className="sectionHeading"><div><div className="eyebrow">Student intelligence</div><h2>Search & Filters</h2></div><button className="btn btnGold" onClick={()=>{const csv=["S.NUMBER,STUDENT NAME,AGE,COUNTRY NAME,TIMING AS PER COUNTRY,DAYS,FEE,PARENTS NAME,PARENT EMAIL,PARENT PHONE,WHATSAPP,GENDER,TEACHER,GROUPS,CURRENCY,ACTIVE",...students.map(s=>[s.serial_number,s.student_name,s.age||"",s.country,s.timing||"",s.days||"",s.monthly_fee,s.parent_name||"",s.parent_email||"",s.parent_phone||"",s.whatsapp_phone||"",s.gender||"",s.teacher_name||"",(s.groups||[]).join("|"),s.currency,s.active?"YES":"NO"].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=`global-punjabi-students-${month}.csv`;a.click();}}>Export CSV</button></div>
-  <div className="filterGrid"><input placeholder="Search student, age, days, teacher, country…" value={q} onChange={e=>setQ(e.target.value)}/><select value={country} onChange={e=>setCountry(e.target.value)}><option value="ALL">All Countries</option>{COUNTRIES.map(x=><option key={x}>{x}</option>)}</select><select value={currency} onChange={e=>setCurrency(e.target.value)}><option value="ALL">All Currencies</option>{CURRENCIES.map(x=><option key={x}>{x}</option>)}</select><select value={teacher} onChange={e=>setTeacher(e.target.value)}><option value="ALL">All Teachers</option>{teachers.map(x=><option key={x}>{x}</option>)}</select><select value={group} onChange={e=>setGroup(e.target.value)}><option value="ALL">All Groups</option>{GROUPS.map(x=><option key={x}>{x}</option>)}</select><select value={gender} onChange={e=>setGender(e.target.value)}><option value="ALL">All Genders</option><option>Male</option><option>Female</option></select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">All Payment Status</option><option value="PENDING">Pending</option><option value="PROCESSING">In Progress</option><option value="VERIFYING">In Progress</option><option value="PAID">Received</option></select></div>
-  <div className="tableWrap"><table className="table"><thead><tr><th>S.No</th><th>Student</th><th>Age</th><th>Country</th><th>Days</th><th>Teacher</th><th>Groups</th><th>Currency</th><th>Fee</th><th>Payment</th><th>Action</th></tr></thead><tbody>{visibleRows.map((row:any)=>{const s=row.student; const i=row.invoice;return <tr key={s.id}><td>{s.serial_number}</td><td><b>{s.student_name}</b><br/><small>{s.gender||""}</small></td><td>{s.age||"—"}</td><td>{s.country}</td><td>{s.days||"—"}</td><td>{s.teacher_name||"—"}</td><td>{(s.groups||[]).join(", ")||"—"}</td><td>{i?.currency||s.currency}</td><td>{i?`${i.currency} ${i.amount}`:`${s.currency} ${s.monthly_fee}`}</td><td>{i?<><span className={`statusPill ${statusClass(i.status)}`}>{statusLabel(i.status)}</span>{i.payment_method&&<small className="methodLabel">{i.payment_method.replace("_"," ")}</small>}</>:<span className="statusPill statusPending">NO INVOICE</span>}</td><td><div className="actionStack"><button className="btn btnGhost btnSmall" disabled={sending===s.id||!s.active} onClick={()=>sendLink(s.id)}>{sending===s.id?"Sending…":s.active?"Send Link":"Inactive"}</button>{i&&<button className="btn btnGhost btnSmall" onClick={()=>setProcessView({invoice:i,student:s})}>View Process</button>}{i?.status==="VERIFYING"&&<button className="btn btnPrimary btnSmall" onClick={()=>approveInvoice(i.id)}>Verify</button>}</div></td></tr>})}</tbody></table></div></section>
+const CURRENCIES = ["USD", "AUD", "CAD", "NZD", "GBP", "EUR", "INR"];
 
-  <section className="grid grid2" style={{marginTop:18}}><div className="card dashboardSection"><div className="sectionHeading"><div><div className="eyebrow">Teachers</div><h2>Teacher Overview</h2></div></div>{teacherStats.length?<div className="teacherList">{teacherStats.map(t=><div className="teacherRow" key={t.name}><div><b>{t.name}</b><div className="mutedText">{t.students.join(", ")}</div></div><span className="countBadge">{t.count} students</span></div>)}</div>:<div className="notice">Add teacher names to your student data to populate this section.</div>}</div><div className="card dashboardSection"><div className="sectionHeading"><div><div className="eyebrow">Currencies</div><h2>Fee Breakdown</h2></div></div><div className="currencyList">{currencyStats.map(x=><div className="currencyRow" key={x.currency}><b>{x.currency}</b><span>{x.count} students</span><strong>{x.currency} {x.total.toFixed(2)}</strong></div>)}</div></div></section>
-  {processView&&<div className="modalBackdrop"><div className="modal card"><div className="eyebrow">PAYMENT PROCESS</div><h2>{processView.student.student_name}</h2><div className="processTimeline"><div className="processStep done"><b>Payment link generated</b><span>Secure invoice link is associated with this student.</span></div><div className={`processStep ${processView.invoice.status!=="PENDING"?"done":""}`}><b>Payment initiated</b><span>{processView.invoice.payment_method?processView.invoice.payment_method.replace("_"," "):"Awaiting payment"}</span></div><div className={`processStep ${processView.invoice.status==="PAID"?"done":""}`}><b>Payment verification</b><span>{processView.invoice.payment_reference||processView.invoice.provider_transaction_id||"Awaiting provider confirmation/reference"}</span></div><div className={`processStep ${processView.invoice.status==="PAID"?"done":""}`}><b>Payment status</b><span>{statusLabel(processView.invoice.status)}</span></div></div><div className="modalActions"><button className="btn btnGhost" onClick={()=>setProcessView(null)}>Close</button>{processView.invoice.status==="VERIFYING"&&<button className="btn btnGold" onClick={()=>{approveInvoice(processView.invoice.id);setProcessView(null)}}>Verify Payment</button>}</div></div></div>
-  {merge&&<div className="modalBackdrop"><div className="modal card"><div className="eyebrow">MULTIPLE STUDENTS DETECTED</div><h2>Merge payment for this parent?</h2><p>The system found other student records using the same parent email/WhatsApp number.</p><div className="mergeList"><div className="mergeItem"><b>{merge.student.name}</b><span>Primary student</span></div>{merge.matches.map((x:any)=><label className="mergeItem" key={x.id}><input className="mergeStudentCheckbox" type="checkbox" defaultChecked value={x.id}/><div><b>{x.name}</b><span>{x.currency} {x.fee} · {x.country}</span></div></label>)}</div><div className="modalActions"><button className="btn btnGhost" onClick={()=>{setMerge(null);sendLinkSeparate(merge.student.id)}}>Send Separately</button><button className="btn btnGold" onClick={mergeAndSend}>Merge & Send One Link</button></div></div></div>}
- </main>
+const COUNTRIES = [
+  "USA",
+  "Australia",
+  "Canada",
+  "New Zealand",
+  "UK",
+  "Europe",
+  "India",
+];
+
+const GROUPS = [
+  "Speaking Group",
+  "Writing Group",
+  "Reading Group",
+];
+
+function statusLabel(status: string) {
+  if (status === "PAID") return "RECEIVED";
+
+  if (
+    status === "PROCESSING" ||
+    status === "VERIFYING"
+  ) {
+    return "IN PROGRESS";
+  }
+
+  return status || "PENDING";
+}
+
+function statusClass(status: string) {
+  if (status === "PAID") {
+    return "statusReceived";
+  }
+
+  if (
+    status === "PROCESSING" ||
+    status === "VERIFYING"
+  ) {
+    return "statusProgress";
+  }
+
+  if (
+    status === "FAILED" ||
+    status === "REFUNDED"
+  ) {
+    return "statusFailed";
+  }
+
+  return "statusPending";
+}
+
+function formatMethod(
+  method: string | null | undefined
+) {
+  if (!method) return "";
+
+  return method.replace(/_/g, " ");
+}
+
+async function readJson(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+export default function AdminClient({
+  initialStudents,
+  initialInvoices,
+  month,
+}: AdminClientProps) {
+  const [students] = useState<AnyRecord[]>(
+    initialStudents || []
+  );
+
+  const [invoices, setInvoices] = useState<
+    AnyRecord[]
+  >(initialInvoices || []);
+
+  const [query, setQuery] = useState("");
+  const [country, setCountry] = useState("ALL");
+  const [currency, setCurrency] = useState("ALL");
+  const [paymentStatus, setPaymentStatus] =
+    useState("ALL");
+  const [teacher, setTeacher] = useState("ALL");
+  const [group, setGroup] = useState("ALL");
+  const [gender, setGender] = useState("ALL");
+
+  const [merge, setMerge] =
+    useState<AnyRecord | null>(null);
+
+  const [processView, setProcessView] =
+    useState<AnyRecord | null>(null);
+
+  const [sending, setSending] =
+    useState<string | null>(null);
+
+  const [toast, setToast] = useState("");
+
+  const teachers = useMemo(() => {
+    return Array.from(
+      new Set(
+        students
+          .map(
+            (student) => student.teacher_name
+          )
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [students]);
+
+  const filteredStudents = useMemo(() => {
+    const normalizedQuery =
+      query.trim().toLowerCase();
+
+    return students.filter((student) => {
+      const searchable = [
+        student.student_name,
+        student.age,
+        student.days,
+        student.teacher_name,
+        student.country,
+        student.parent_name,
+        student.parent_email,
+        student.parent_phone,
+        student.whatsapp_phone,
+        student.gender,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const groups = Array.isArray(
+        student.groups
+      )
+        ? student.groups
+        : [];
+
+      return (
+        (!normalizedQuery ||
+          searchable.includes(
+            normalizedQuery
+          )) &&
+        (country === "ALL" ||
+          student.country === country) &&
+        (currency === "ALL" ||
+          student.currency === currency) &&
+        (teacher === "ALL" ||
+          student.teacher_name === teacher) &&
+        (gender === "ALL" ||
+          student.gender === gender) &&
+        (group === "ALL" ||
+          groups.some(
+            (item: string) =>
+              item.toLowerCase() ===
+              group.toLowerCase()
+          ))
+      );
+    });
+  }, [
+    students,
+    query,
+    country,
+    currency,
+    teacher,
+    gender,
+    group,
+  ]);
+
+  const invoiceMap = useMemo(() => {
+    return new Map(
+      invoices.map((invoice) => [
+        invoice.student_id,
+        invoice,
+      ])
+    );
+  }, [invoices]);
+
+  const visibleRows = useMemo(() => {
+    return filteredStudents
+      .map((student) => ({
+        student,
+        invoice: invoiceMap.get(student.id),
+      }))
+      .filter(({ invoice }) => {
+        return (
+          paymentStatus === "ALL" ||
+          invoice?.status === paymentStatus
+        );
+      });
+  }, [
+    filteredStudents,
+    invoiceMap,
+    paymentStatus,
+  ]);
+
+  const counts = useMemo(() => {
+    return {
+      total: students.length,
+
+      active: students.filter(
+        (student) => student.active
+      ).length,
+
+      inactive: students.filter(
+        (student) => !student.active
+      ).length,
+
+      received: invoices.filter(
+        (invoice) =>
+          invoice.status === "PAID"
+      ).length,
+
+      pending: invoices.filter(
+        (invoice) =>
+          invoice.status === "PENDING"
+      ).length,
+
+      progress: invoices.filter(
+        (invoice) =>
+          invoice.status === "PROCESSING" ||
+          invoice.status === "VERIFYING"
+      ).length,
+    };
+  }, [students, invoices]);
+
+  const teacherStats = useMemo(() => {
+    return teachers.map((teacherName) => {
+      const teacherStudents =
+        students.filter(
+          (student) =>
+            student.teacher_name ===
+            teacherName
+        );
+
+      return {
+        name: teacherName,
+        count: teacherStudents.length,
+        students:
+          teacherStudents.map(
+            (student) =>
+              student.student_name
+          ),
+      };
+    });
+  }, [students, teachers]);
+
+  const currencyStats = useMemo(() => {
+    return CURRENCIES.map((item) => {
+      const currencyStudents =
+        students.filter(
+          (student) =>
+            student.currency === item
+        );
+
+      return {
+        currency: item,
+        count: currencyStudents.length,
+
+        total: currencyStudents.reduce(
+          (total, student) =>
+            total +
+            Number(
+              student.monthly_fee || 0
+            ),
+          0
+        ),
+      };
+    });
+  }, [students]);
+
+  function showToast(message: string) {
+    setToast(message);
+
+    window.setTimeout(
+      () => setToast(""),
+      4500
+    );
+  }
+
+  async function sendLinkSeparate(
+    studentId: string
+  ) {
+    setSending(studentId);
+
+    try {
+      const response = await fetch(
+        "/api/admin/payment-links/send",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            studentId,
+            month,
+            forceSeparate: true,
+          }),
+        }
+      );
+
+      const data =
+        await readJson(response);
+
+      if (response.ok) {
+        showToast(
+          "Payment link sent separately."
+        );
+      } else {
+        showToast(
+          data.error ||
+            "Could not send payment link."
+        );
+      }
+    } catch {
+      showToast(
+        "Could not connect to the payment-link service."
+      );
+    } finally {
+      setSending(null);
+    }
+  }
+
+  async function sendLink(
+    studentId: string
+  ) {
+    setSending(studentId);
+
+    try {
+      const response = await fetch(
+        "/api/admin/payment-links/send",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            studentId,
+            month,
+          }),
+        }
+      );
+
+      const data =
+        await readJson(response);
+
+      if (data.needsMergeDecision) {
+        setMerge(data);
+        return;
+      }
+
+      if (response.ok) {
+        showToast(
+          data.whatsapp?.skipped
+            ? "Payment link sent by email. WhatsApp is not configured yet."
+            : "Payment link sent. Email and WhatsApp processed."
+        );
+      } else {
+        showToast(
+          data.error ||
+            "Could not send payment link."
+        );
+      }
+    } catch {
+      showToast(
+        "Could not connect to the payment-link service."
+      );
+    } finally {
+      setSending(null);
+    }
+  }
+
+  async function mergeAndSend() {
+    if (!merge) return;
+
+    const checkboxes =
+      Array.from(
+        document.querySelectorAll<HTMLInputElement>(
+          ".mergeStudentCheckbox:checked"
+        )
+      );
+
+    const studentIds =
+      checkboxes.map(
+        (checkbox) =>
+          checkbox.value
+      );
+
+    if (studentIds.length === 0) {
+      showToast(
+        "Select at least one student to merge."
+      );
+      return;
+    }
+
+    setSending(
+      merge.student?.id || null
+    );
+
+    try {
+      const response = await fetch(
+        "/api/admin/payment-links/send",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            studentId:
+              merge.student?.id,
+
+            studentIds,
+
+            mergeConfirmed: true,
+
+            month,
+          }),
+        }
+      );
+
+      const data =
+        await readJson(response);
+
+      if (response.ok) {
+        showToast(
+          `Combined payment link sent for ${
+            Array.isArray(
+              data.studentIds
+            )
+              ? data.studentIds.length
+              : studentIds.length
+          } students.`
+        );
+
+        setMerge(null);
+      } else {
+        showToast(
+          data.error ||
+            "Could not send combined payment link."
+        );
+      }
+    } catch {
+      showToast(
+        "Could not connect to the payment-link service."
+      );
+    } finally {
+      setSending(null);
+    }
+  }
+
+  async function approveInvoice(
+    invoiceId: string
+  ) {
+    try {
+      const response = await fetch(
+        `/api/admin/payments/${invoiceId}/approve`,
+        {
+          method: "POST",
+        }
+      );
+
+      if (response.ok) {
+        setInvoices((current) =>
+          current.map((invoice) =>
+            invoice.id === invoiceId
+              ? {
+                  ...invoice,
+                  status: "PAID",
+                  paid_at:
+                    new Date().toISOString(),
+                }
+              : invoice
+          )
+        );
+
+        showToast(
+          "Payment verified successfully."
+        );
+      } else {
+        showToast(
+          "Payment verification failed."
+        );
+      }
+    } catch {
+      showToast(
+        "Could not connect to the verification service."
+      );
+    }
+  }
+
+  async function approveGroup(
+    groupId: string
+  ) {
+    try {
+      const response = await fetch(
+        `/api/admin/payment-groups/${groupId}/approve`,
+        {
+          method: "POST",
+        }
+      );
+
+      if (response.ok) {
+        showToast(
+          "Combined payment verified. Refreshing…"
+        );
+
+        window.location.reload();
+      } else {
+        showToast(
+          "Combined payment verification failed."
+        );
+      }
+    } catch {
+      showToast(
+        "Could not connect to the verification service."
+      );
+    }
+  }
+
+  function exportCsv() {
+    const header = [
+      "S.NUMBER",
+      "STUDENT NAME",
+      "AGE",
+      "COUNTRY NAME",
+      "TIMING AS PER COUNTRY",
+      "DAYS",
+      "FEE",
+      "PARENTS NAME",
+      "PARENT EMAIL",
+      "PARENT PHONE",
+      "WHATSAPP",
+      "GENDER",
+      "TEACHER",
+      "GROUPS",
+      "CURRENCY",
+      "ACTIVE",
+    ];
+
+    const rows = students.map(
+      (student) => [
+        student.serial_number,
+        student.student_name,
+        student.age || "",
+        student.country,
+        student.timing || "",
+        student.days || "",
+        student.monthly_fee,
+        student.parent_name || "",
+        student.parent_email || "",
+        student.parent_phone || "",
+        student.whatsapp_phone || "",
+        student.gender || "",
+        student.teacher_name || "",
+        (
+          Array.isArray(
+            student.groups
+          )
+            ? student.groups
+            : []
+        ).join("|"),
+        student.currency,
+        student.active
+          ? "YES"
+          : "NO",
+      ]
+    );
+
+    const csv = [
+      header,
+      ...rows,
+    ]
+      .map((row) =>
+        row
+          .map(
+            (value) =>
+              `"${String(
+                value ?? ""
+              ).replace(
+                /"/g,
+                '""'
+              )}"`
+          )
+          .join(",")
+      )
+      .join("\n");
+
+    const url =
+      URL.createObjectURL(
+        new Blob([csv], {
+          type: "text/csv;charset=utf-8",
+        })
+      );
+
+    const anchor =
+      document.createElement("a");
+
+    anchor.href = url;
+
+    anchor.download =
+      `global-punjabi-students-${month}.csv`;
+
+    document.body.appendChild(anchor);
+
+    anchor.click();
+
+    anchor.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
+  const mergeStudentName =
+    merge?.student?.student_name ||
+    merge?.student?.name ||
+    "Student";
+
+  const mergeMatches =
+    Array.isArray(merge?.matches)
+      ? merge.matches
+      : [];
+
+  return (
+    <main
+      className="container"
+      style={{
+        padding:
+          "30px 20px 80px",
+      }}
+    >
+      <div className="adminHeader">
+        <div>
+          <div className="eyebrow">
+            PRIVATE OPERATOR AREA
+          </div>
+
+          <h1
+            style={{
+              margin: "6px 0",
+            }}
+          >
+            Global Punjabi Classes — Admin
+          </h1>
+
+          <p
+            style={{
+              color: "#64748b",
+            }}
+          >
+            Fee operations ·{" "}
+            {new Date(
+              month
+            ).toLocaleString(
+              "en-US",
+              {
+                month: "long",
+                year: "numeric",
+              }
+            )}
+          </p>
+        </div>
+
+        <div className="headerActions">
+          <a
+            href="/"
+            className="btn btnGhost"
+          >
+            Public Home
+          </a>
+
+          <button
+            className="btn btnGhost"
+            onClick={async () => {
+              await fetch(
+                "/api/admin/logout",
+                {
+                  method: "POST",
+                }
+              );
+
+              window.location.href =
+                "/admin/login";
+            }}
+          >
+            Log out
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid4 statsGrid">
+        <div className="card stat">
+          <div className="n">
+            {counts.total}
+          </div>
+
+          <div className="l">
+            Total Students
+          </div>
+        </div>
+
+        <div className="card stat">
+          <div className="n">
+            {counts.active}
+          </div>
+
+          <div className="l">
+            Active Students
+          </div>
+        </div>
+
+        <div className="card stat">
+          <div className="n">
+            {counts.inactive}
+          </div>
+
+          <div className="l">
+            Not Active
+          </div>
+        </div>
+
+        <div className="card stat">
+          <div className="n">
+            {counts.received}
+          </div>
+
+          <div className="l">
+            Received This Month
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="grid grid3"
+        style={{
+          marginBottom: 18,
+        }}
+      >
+        <div className="card miniStat">
+          <b>{counts.pending}</b>
+          <span>
+            Pending payments
+          </span>
+        </div>
+
+        <div className="card miniStat">
+          <b>{counts.progress}</b>
+          <span>
+            In progress
+          </span>
+        </div>
+
+        <div className="card miniStat">
+          <b>{teachers.length}</b>
+          <span>Teachers</span>
+        </div>
+      </div>
+
+      <section className="card dashboardSection">
+        <div className="sectionHeading">
+          <div>
+            <div className="eyebrow">
+              Student intelligence
+            </div>
+
+            <h2>
+              Search &amp; Filters
+            </h2>
+          </div>
+
+          <button
+            className="btn btnGold"
+            onClick={exportCsv}
+          >
+            Export CSV
+          </button>
+        </div>
+
+        <div className="filterGrid">
+          <input
+            placeholder="Search student, age, days, teacher, country…"
+            value={query}
+            onChange={(event) =>
+              setQuery(
+                event.target.value
+              )
+            }
+          />
+
+          <select
+            value={country}
+            onChange={(event) =>
+              setCountry(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Countries
+            </option>
+
+            {COUNTRIES.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={currency}
+            onChange={(event) =>
+              setCurrency(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Currencies
+            </option>
+
+            {CURRENCIES.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={teacher}
+            onChange={(event) =>
+              setTeacher(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Teachers
+            </option>
+
+            {teachers.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={group}
+            onChange={(event) =>
+              setGroup(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Groups
+            </option>
+
+            {GROUPS.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={gender}
+            onChange={(event) =>
+              setGender(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Genders
+            </option>
+
+            <option value="Male">
+              Male
+            </option>
+
+            <option value="Female">
+              Female
+            </option>
+          </select>
+
+          <select
+            value={paymentStatus}
+            onChange={(event) =>
+              setPaymentStatus(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Payment Status
+            </option>
+
+            <option value="PENDING">
+              Pending
+            </option>
+
+            <option value="PROCESSING">
+              In Progress
+            </option>
+
+            <option value="VERIFYING">
+              In Progress
+            </option>
+
+            <option value="PAID">
+              Received
+            </option>
+          </select>
+        </div>
+
+        <div className="tableWrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>S.No</th>
+                <th>Student</th>
+                <th>Age</th>
+                <th>Country</th>
+                <th>Days</th>
+                <th>Teacher</th>
+                <th>Groups</th>
+                <th>Currency</th>
+                <th>Fee</th>
+                <th>Payment</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {visibleRows.map(
+                ({
+                  student,
+                  invoice,
+                }) => (
+                  <tr
+                    key={student.id}
+                  >
+                    <td>
+                      {
+                        student.serial_number
+                      }
+                    </td>
+
+                    <td>
+                      <b>
+                        {
+                          student.student_name
+                        }
+                      </b>
+
+                      <br />
+
+                      <small>
+                        {
+                          student.gender ||
+                          ""
+                        }
+                      </small>
+                    </td>
+
+                    <td>
+                      {student.age ||
+                        "—"}
+                    </td>
+
+                    <td>
+                      {student.country}
+                    </td>
+
+                    <td>
+                      {student.days ||
+                        "—"}
+                    </td>
+
+                    <td>
+                      {student.teacher_name ||
+                        "—"}
+                    </td>
+
+                    <td>
+                      {(
+                        Array.isArray(
+                          student.groups
+                        )
+                          ? student.groups
+                          : []
+                      ).join(", ") ||
+                        "—"}
+                    </td>
+
+                    <td>
+                      {
+                        invoice?.currency ||
+                        student.currency
+                      }
+                    </td>
+
+                    <td>
+                      {invoice
+                        ? `${invoice.currency} ${invoice.amount}`
+                        : `${student.currency} ${student.monthly_fee}`}
+                    </td>
+
+                    <td>
+                      {invoice ? (
+                        <>
+                          <span
+                            className={`statusPill ${statusClass(
+                              invoice.status
+                            )}`}
+                          >
+                            {statusLabel(
+                              invoice.status
+                            )}
+                          </span>
+
+                          {invoice.payment_method && (
+                            <small className="methodLabel">
+                              {formatMethod(
+                                invoice.payment_method
+                              )}
+                            </small>
+                          )}
+                        </>
+                      ) : (
+                        <span className="statusPill statusPending">
+                          NO INVOICE
+                        </span>
+                      )}
+                    </td>
+
+                    <td>
+                      <div className="actionStack">
+                        <button
+                          className="btn btnGhost btnSmall"
+                          disabled={
+                            sending ===
+                              student.id ||
+                            !student.active
+                          }
+                          onClick={() =>
+                            sendLink(
+                              student.id
+                            )
+                          }
+                        >
+                          {sending ===
+                          student.id
+                            ? "Sending…"
+                            : student.active
+                              ? "Send Link"
+                              : "Inactive"}
+                        </button>
+
+                        {invoice && (
+                          <button
+                            className="btn btnGhost btnSmall"
+                            onClick={() =>
+                              setProcessView(
+                                {
+                                  invoice,
+                                  student,
+                                }
+                              )
+                            }
+                          >
+                            View Process
+                          </button>
+                        )}
+
+                        {invoice?.status ===
+                          "VERIFYING" && (
+                          <button
+                            className="btn btnPrimary btnSmall"
+                            onClick={() =>
+                              approveInvoice(
+                                invoice.id
+                              )
+                            }
+                          >
+                            Verify
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section
+        className="grid grid2"
+        style={{
+          marginTop: 18,
+        }}
+      >
+        <div className="card dashboardSection">
+          <div className="sectionHeading">
+            <div>
+              <div className="eyebrow">
+                Teachers
+              </div>
+
+              <h2>
+                Teacher Overview
+              </h2>
+            </div>
+          </div>
+
+          {teacherStats.length ? (
+            <div className="teacherList">
+              {teacherStats.map(
+                (item) => (
+                  <div
+                    className="teacherRow"
+                    key={item.name}
+                  >
+                    <div>
+                      <b>
+                        {item.name}
+                      </b>
+
+                      <div className="mutedText">
+                        {item.students.join(
+                          ", "
+                        )}
+                      </div>
+                    </div>
+
+                    <span className="countBadge">
+                      {item.count} students
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="notice">
+              Add teacher names to your
+              student data to populate
+              this section.
+            </div>
+          )}
+        </div>
+
+        <div className="card dashboardSection">
+          <div className="sectionHeading">
+            <div>
+              <div className="eyebrow">
+                Currencies
+              </div>
+
+              <h2>
+                Fee Breakdown
+              </h2>
+            </div>
+          </div>
+
+          <div className="currencyList">
+            {currencyStats.map(
+              (item) => (
+                <div
+                  className="currencyRow"
+                  key={item.currency}
+                >
+                  <b>
+                    {item.currency}
+                  </b>
+
+                  <span>
+                    {item.count} students
+                  </span>
+
+                  <strong>
+                    {item.currency}{" "}
+                    {item.total.toFixed(
+                      2
+                    )}
+                  </strong>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      </section>
+
+      {processView && (
+        <div className="modalBackdrop">
+          <div className="modal card">
+            <div className="eyebrow">
+              PAYMENT PROCESS
+            </div>
+
+            <h2>
+              {
+                processView.student
+                  .student_name
+              }
+            </h2>
+
+            <div className="processTimeline">
+              <div className="processStep done">
+                <b>
+                  Payment link generated
+                </b>
+
+                <span>
+                  Secure invoice link is
+                  associated with this
+                  student.
+                </span>
+              </div>
+
+              <div
+                className={`processStep ${
+                  processView.invoice
+                    .status !==
+                  "PENDING"
+                    ? "done"
+                    : ""
+                }`}
+              >
+                <b>
+                  Payment initiated
+                </b>
+
+                <span>
+                  {processView.invoice
+                    .payment_method
+                    ? formatMethod(
+                        processView
+                          .invoice
+                          .payment_method
+                      )
+                    : "Awaiting payment"}
+                </span>
+              </div>
+
+              <div
+                className={`processStep ${
+                  processView.invoice
+                    .status === "PAID"
+                    ? "done"
+                    : ""
+                }`}
+              >
+                <b>
+                  Payment verification
+                </b>
+
+                <span>
+                  {processView.invoice
+                    .payment_reference ||
+                    processView.invoice
+                      .provider_transaction_id ||
+                    "Awaiting provider confirmation/reference"}
+                </span>
+              </div>
+
+              <div
+                className={`processStep ${
+                  processView.invoice
+                    .status === "PAID"
+                    ? "done"
+                    : ""
+                }`}
+              >
+                <b>
+                  Payment status
+                </b>
+
+                <span>
+                  {statusLabel(
+                    processView.invoice
+                      .status
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <div className="modalActions">
+              <button
+                className="btn btnGhost"
+                onClick={() =>
+                  setProcessView(null)
+                }
+              >
+                Close
+              </button>
+
+              {processView.invoice
+                .status ===
+                "VERIFYING" && (
+                <button
+                  className="btn btnGold"
+                  onClick={async () => {
+                    await approveInvoice(
+                      processView
+                        .invoice.id
+                    );
+
+                    setProcessView(
+                      null
+                    );
+                  }}
+                >
+                  Verify Payment
+                </button>
+              )}
+
+              {processView.invoice
+                .payment_group_id && (
+                <button
+                  className="btn btnPrimary"
+                  onClick={() =>
+                    approveGroup(
+                      processView.invoice
+                        .payment_group_id
+                    )
+                  }
+                >
+                  Verify Combined Payment
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {merge && (
+        <div className="modalBackdrop">
+          <div className="modal card">
+            <div className="eyebrow">
+              MULTIPLE STUDENTS DETECTED
+            </div>
+
+            <h2>
+              Merge payment for this
+              parent?
+            </h2>
+
+            <p>
+              The system found other
+              student records using the
+              same parent email/WhatsApp
+              number.
+            </p>
+
+            <div className="mergeList">
+              <div className="mergeItem">
+                <b>
+                  {mergeStudentName}
+                </b>
+
+                <span>
+                  Primary student
+                </span>
+              </div>
+
+              {mergeMatches.map(
+                (item: AnyRecord) => (
+                  <label
+                    className="mergeItem"
+                    key={item.id}
+                  >
+                    <input
+                      className="mergeStudentCheckbox"
+                      type="checkbox"
+                      defaultChecked
+                      value={item.id}
+                    />
+
+                    <div>
+                      <b>
+                        {item.student_name ||
+                          item.name}
+                      </b>
+
+                      <span>
+                        {item.currency}{" "}
+                        {item.fee} ·{" "}
+                        {item.country}
+                      </span>
+                    </div>
+                  </label>
+                )
+              )}
+            </div>
+
+            <div className="modalActions">
+              <button
+                className="btn btnGhost"
+                onClick={() => {
+                  const studentId =
+                    merge.student?.id;
+
+                  setMerge(null);
+
+                  if (studentId) {
+                    void sendLinkSeparate(
+                      studentId
+                    );
+                  }
+                }}
+              >
+                Send Separately
+              </button>
+
+              <button
+                className="btn btnGold"
+                onClick={mergeAndSend}
+              >
+                Merge &amp; Send One Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="toast">
+          {toast}
+        </div>
+      )}
+    </main>
+  );
 }
