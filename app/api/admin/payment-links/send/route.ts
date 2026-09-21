@@ -293,20 +293,24 @@ async function deliverPaymentLink(
         error?.message ||
         "Email sending failed";
 
-      await supabaseAdmin
-        .from("message_log")
-        .insert({
-          student_id:
-            studentIds.length === 1
-              ? studentIds[0]
-              : null,
-          payment_group_id:
-            groupId,
-          channel: "EMAIL",
-          destination: sameEmail,
-          status: "FAILED",
-        })
-        .catch(() => {});
+      try {
+        await supabaseAdmin
+          .from("message_log")
+          .insert({
+            student_id:
+              studentIds.length === 1
+                ? studentIds[0]
+                : null,
+            payment_group_id:
+              groupId,
+            channel: "EMAIL",
+            destination: sameEmail,
+            status: "FAILED",
+          });
+      } catch {
+        // Do not let message-log failure hide the
+        // original email delivery failure.
+      }
     }
   }
 
