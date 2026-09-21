@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
@@ -378,6 +378,11 @@ async function deliverPaymentLink(
       whatsapp: whatsappResult,
     }
   );
+
+  return {
+    email: emailResult,
+    whatsapp: whatsappResult,
+  };
 }
 
 export async function POST(
@@ -517,19 +522,11 @@ export async function POST(
         actor
       );
 
-    after(async () => {
-      try {
-        await deliverPaymentLink(
-          prepared,
-          actor
-        );
-      } catch (error) {
-        console.error(
-          "Payment-link delivery failed:",
-          error
-        );
-      }
-    });
+    const delivery =
+      await deliverPaymentLink(
+        prepared,
+        actor
+      );
 
     return NextResponse.json({
       ok: true,
@@ -543,20 +540,14 @@ export async function POST(
         prepared.total,
       currency:
         prepared.currency,
-      email: {
-        queued:
-          Boolean(
-            prepared.sameEmail
-          ),
-      },
-      whatsapp: {
-        queued:
-          Boolean(
-            prepared.samePhone
-          ),
-      },
-      emailSent: false,
-      whatsappSent: false,
+      email:
+        delivery.email,
+      whatsapp:
+        delivery.whatsapp,
+      emailSent:
+        delivery.email?.status === "SENT",
+      whatsappSent:
+        delivery.whatsapp?.status === "SENT",
     });
   } catch (error: any) {
     return NextResponse.json(
