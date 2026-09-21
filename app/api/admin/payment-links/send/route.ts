@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
@@ -51,7 +51,7 @@ async function matchingStudents(student: any) {
   });
 }
 
-async function sendForStudents(
+async function preparePaymentLink(
   students: any[],
   feeMonth: string,
   actor: string
@@ -89,8 +89,7 @@ async function sendForStudents(
   const total = prepared
     .reduce(
       (sum, item) =>
-        sum +
-        Number(item.invoice.amount),
+        sum + Number(item.invoice.amount),
       0
     )
     .toFixed(2);
@@ -116,9 +115,6 @@ async function sendForStudents(
     (s) => s.student_name
   );
 
-  let paymentUrl = "";
-  let groupId: string | null = null;
-
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL;
 
@@ -127,6 +123,9 @@ async function sendForStudents(
       "NEXT_PUBLIC_SITE_URL is not configured"
     );
   }
+
+  let paymentUrl = "";
+  let groupId: string | null = null;
 
   if (prepared.length === 1) {
     paymentUrl =
@@ -207,9 +206,44 @@ async function sendForStudents(
     );
   }
 
-  /*
-   * EMAIL
-   */
+  const invoiceId =
+    groupId ||
+    prepared[0].invoice.id;
+
+  return {
+    paymentUrl,
+    groupId,
+    studentIds: students.map(
+      (s) => s.id
+    ),
+    total,
+    currency,
+    names,
+    sameEmail,
+    samePhone,
+    invoiceId,
+    feeMonth,
+  };
+}
+
+async function deliverPaymentLink(
+  prepared: Awaited<
+    ReturnType<typeof preparePaymentLink>
+  >,
+  actor: string
+) {
+  const {
+    paymentUrl,
+    groupId,
+    studentIds,
+    total,
+    currency,
+    names,
+    sameEmail,
+    samePhone,
+    invoiceId,
+    feeMonth,
+  } = prepared;
 
   const emailResult: any = {
     attempted: false,
@@ -244,8 +278,8 @@ async function sendForStudents(
         .from("message_log")
         .insert({
           student_id:
-            students.length === 1
-              ? students[0].id
+            studentIds.length === 1
+              ? studentIds[0]
               : null,
           payment_group_id:
             groupId,
@@ -263,8 +297,8 @@ async function sendForStudents(
         .from("message_log")
         .insert({
           student_id:
-            students.length === 1
-              ? students[0].id
+            studentIds.length === 1
+              ? studentIds[0]
               : null,
           payment_group_id:
             groupId,
@@ -276,11 +310,7 @@ async function sendForStudents(
     }
   }
 
-  /*
-   * WHATSAPP
-   */
-
-  const whatsappResult: any = {
+  let whatsappResult: any = {
     attempted: false,
     ok: false,
     status: "SKIPPED",
@@ -301,8 +331,8 @@ async function sendForStudents(
             monthLabel(feeMonth),
           paymentUrl,
           logStudentId:
-            students.length === 1
-              ? students[0].id
+            studentIds.length === 1
+              ? studentIds[0]
               : null,
           paymentGroupId:
             groupId,
@@ -312,9 +342,7 @@ async function sendForStudents(
         ...whatsappResult,
         ...result,
         attempted: true,
-        ok: Boolean(
-          result?.ok
-        ),
+        ok: Boolean(result?.ok),
         status:
           result?.ok
             ? "SENT"
@@ -327,7 +355,6 @@ async function sendForStudents(
     } catch (error: any) {
       whatsappResult.status =
         "FAILED";
-
       whatsappResult.error =
         error?.message ||
         "WhatsApp sending failed";
@@ -339,39 +366,15 @@ async function sendForStudents(
     groupId
       ? "payment_group"
       : "invoice",
-    groupId ||
-      prepared[0].invoice.id,
+    invoiceId,
     actor,
     {
-      studentIds: students.map(
-        (s) => s.id
-      ),
+      studentIds,
       paymentUrl,
       email: emailResult,
       whatsapp: whatsappResult,
     }
   );
-
-  return {
-    paymentUrl,
-    groupId,
-    studentIds: students.map(
-      (s) => s.id
-    ),
-    total,
-    currency,
-
-    email: emailResult,
-    whatsapp: whatsappResult,
-
-    emailSent:
-      emailResult.status ===
-      "SENT",
-
-    whatsappSent:
-      whatsappResult.status ===
-      "SENT",
-  };
 }
 
 export async function POST(
@@ -500,19 +503,57 @@ export async function POST(
         rows || [];
     }
 
-    const result =
-      await sendForStudents(
+    const actor = String(
+      session.email || "admin"
+    );
+
+    const prepared =
+      await preparePaymentLink(
         selected,
         feeMonth,
-        String(
-          session.email ||
-            "admin"
-        )
+        actor
       );
+
+    after(async () => {
+      try {
+        await deliverPaymentLink(
+          prepared,
+          actor
+        );
+      } catch (error) {
+        console.error(
+          "Payment-link delivery failed:",
+          error
+        );
+      }
+    });
 
     return NextResponse.json({
       ok: true,
-      ...result,
+      paymentUrl:
+        prepared.paymentUrl,
+      groupId:
+        prepared.groupId,
+      studentIds:
+        prepared.studentIds,
+      total:
+        prepared.total,
+      currency:
+        prepared.currency,
+      email: {
+        queued:
+          Boolean(
+            prepared.sameEmail
+          ),
+      },
+      whatsapp: {
+        queued:
+          Boolean(
+            prepared.samePhone
+          ),
+      },
+      emailSent: false,
+      whatsappSent: false,
     });
   } catch (error: any) {
     return NextResponse.json(
