@@ -407,6 +407,46 @@ export default function AdminClient({
     );
   }
 
+  function getSendResultMessage(data: AnyRecord) {
+    const emailStatus =
+      data?.email?.status ||
+      (data?.emailSent ? "SENT" : "SKIPPED");
+
+    const whatsappStatus =
+      data?.whatsapp?.status ||
+      (data?.whatsappSent ? "SENT" : "SKIPPED");
+
+    const emailText =
+      emailStatus === "SENT"
+        ? "Email sent"
+        : emailStatus === "FAILED"
+          ? "Email failed"
+          : "Email skipped";
+
+    const whatsappText =
+      whatsappStatus === "SENT"
+        ? "WhatsApp sent"
+        : whatsappStatus === "FAILED"
+          ? "WhatsApp failed"
+          : "WhatsApp skipped";
+
+    if (
+      emailStatus === "SENT" &&
+      whatsappStatus === "SENT"
+    ) {
+      return "Payment link sent successfully by Email and WhatsApp.";
+    }
+
+    if (
+      emailStatus === "SENT" ||
+      whatsappStatus === "SENT"
+    ) {
+      return `${emailText} · ${whatsappText}.`;
+    }
+
+    return `${emailText} · ${whatsappText}. Please check the Email/WhatsApp configuration.`;
+  }
+
   async function sendLinkSeparate(
     studentId: string
   ) {
@@ -433,9 +473,7 @@ export default function AdminClient({
         await readJson(response);
 
       if (response.ok) {
-        showToast(
-          "Payment link sent separately."
-        );
+        showToast(getSendResultMessage(data));
       } else {
         showToast(
           data.error ||
@@ -481,11 +519,7 @@ export default function AdminClient({
       }
 
       if (response.ok) {
-        showToast(
-          data.whatsapp?.skipped
-            ? "Payment link sent by email. WhatsApp is not configured yet."
-            : "Payment link sent. Email and WhatsApp processed."
-        );
+        showToast(getSendResultMessage(data));
       } else {
         showToast(
           data.error ||
@@ -554,14 +588,13 @@ export default function AdminClient({
         await readJson(response);
 
       if (response.ok) {
+        const count =
+          Array.isArray(data.studentIds)
+            ? data.studentIds.length
+            : studentIds.length;
+
         showToast(
-          `Combined payment link sent for ${
-            Array.isArray(
-              data.studentIds
-            )
-              ? data.studentIds.length
-              : studentIds.length
-          } students.`
+          `Combined payment link sent for ${count} students. ${getSendResultMessage(data)}`
         );
 
         setMerge(null);
