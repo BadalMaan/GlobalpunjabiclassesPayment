@@ -410,31 +410,57 @@ export default function AdminClient({
   function getSendResultMessage(data: AnyRecord) {
     const emailStatus =
       data?.email?.status ||
-      (data?.emailSent ? "SENT" : "SKIPPED");
+      (data?.email?.queued
+        ? "QUEUED"
+        : data?.emailSent
+          ? "SENT"
+          : "SKIPPED");
 
     const whatsappStatus =
       data?.whatsapp?.status ||
-      (data?.whatsappSent ? "SENT" : "SKIPPED");
+      (data?.whatsapp?.queued
+        ? "QUEUED"
+        : data?.whatsappSent
+          ? "SENT"
+          : "SKIPPED");
 
     const emailText =
       emailStatus === "SENT"
         ? "Email sent"
-        : emailStatus === "FAILED"
-          ? "Email failed"
-          : "Email skipped";
+        : emailStatus === "QUEUED"
+          ? "Email queued"
+          : emailStatus === "FAILED"
+            ? "Email failed"
+            : "Email skipped";
 
     const whatsappText =
       whatsappStatus === "SENT"
         ? "WhatsApp sent"
-        : whatsappStatus === "FAILED"
-          ? "WhatsApp failed"
-          : "WhatsApp skipped";
+        : whatsappStatus === "QUEUED"
+          ? "WhatsApp queued"
+          : whatsappStatus === "FAILED"
+            ? "WhatsApp failed"
+            : "WhatsApp skipped";
 
     if (
       emailStatus === "SENT" &&
       whatsappStatus === "SENT"
     ) {
       return "Payment link sent successfully by Email and WhatsApp.";
+    }
+
+    if (
+      emailStatus === "QUEUED" &&
+      whatsappStatus === "QUEUED"
+    ) {
+      return "Payment link created successfully. Email and WhatsApp delivery queued.";
+    }
+
+    if (
+      emailStatus === "QUEUED" ||
+      whatsappStatus === "QUEUED"
+    ) {
+      return `${emailText} · ${whatsappText}. Payment link created successfully.`;
     }
 
     if (
