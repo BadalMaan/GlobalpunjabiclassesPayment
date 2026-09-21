@@ -587,7 +587,6 @@ async function deliverPaymentLink(
 
         error:
           result?.reason ||
-          result?.error ||
           null,
       };
     } catch (error: any) {
