@@ -1,68 +1,135 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+
 import {
   ensureInvoice,
   monthLabel,
   monthStart,
 } from "@/lib/fees";
+
 import {
   feeEmail,
   sendEmail,
 } from "@/lib/email";
+
 import {
   sendWhatsAppPaymentLink,
 } from "@/lib/whatsapp";
+
 import {
   normalizeEmail,
   normalizePhone,
   logAudit,
 } from "@/lib/payment";
 
+/**
+ * Find other active students belonging to the same parent.
+ *
+ * We search directly instead of loading every active student.
+ */
 async function matchingStudents(student: any) {
-  const email = normalizeEmail(student.parent_email);
-  const phone = normalizePhone(
-    student.whatsapp_phone || student.parent_phone
+  const email = normalizeEmail(
+    student.parent_email
   );
 
-  if (!email && !phone) return [];
+  const phone = normalizePhone(
+    student.whatsapp_phone ||
+      student.parent_phone
+  );
 
-  const { data: all } = await supabaseAdmin
-    .from("students")
-    .select("*")
-    .eq("active", true)
-    .order("serial_number");
+  if (!email && !phone) {
+    return [];
+  }
 
-  return (all || []).filter((s: any) => {
-    const sameEmail =
-      email &&
-      normalizeEmail(s.parent_email) === email;
+  const results: any[] = [];
 
-    const samePhone =
-      phone &&
-      normalizePhone(
-        s.whatsapp_phone || s.parent_phone
-      ) === phone;
+  /*
+   * Search by email.
+   */
+  if (email) {
+    const { data: emailMatches } =
+      await supabaseAdmin
+        .from("students")
+        .select("*")
+        .eq("active", true)
+        .ilike("parent_email", email);
 
-    return (
-      (sameEmail || samePhone) &&
-      s.id !== student.id
-    );
-  });
+    if (emailMatches) {
+      results.push(...emailMatches);
+    }
+  }
+
+  /*
+   * Search by phone.
+   *
+   * This assumes phone numbers are stored in normalized
+   * form, which matches the existing normalizePhone flow.
+   */
+  if (phone) {
+    const { data: phoneMatches } =
+      await supabaseAdmin
+        .from("students")
+        .select("*")
+        .eq("active", true)
+        .or(
+          `whatsapp_phone.eq.${phone},parent_phone.eq.${phone}`
+        );
+
+    if (phoneMatches) {
+      results.push(...phoneMatches);
+    }
+  }
+
+  /*
+   * Remove duplicates and current student.
+   */
+  const unique = new Map<string, any>();
+
+  for (const item of results) {
+    if (
+      item.id &&
+      item.id !== student.id
+    ) {
+      unique.set(item.id, item);
+    }
+  }
+
+  return Array.from(
+    unique.values()
+  ).sort(
+    (a, b) =>
+      Number(a.serial_number || 0) -
+      Number(b.serial_number || 0)
+  );
 }
 
+/**
+ * Prepare invoice/payment link.
+ *
+ * This part completes before the admin request returns.
+ * Email and WhatsApp delivery happen afterwards.
+ */
 async function preparePaymentLink(
   students: any[],
   feeMonth: string,
   actor: string
 ) {
   if (!students.length) {
-    throw new Error("No students selected");
+    throw new Error(
+      "No students selected"
+    );
   }
 
+  /*
+   * All children in a merged payment must
+   * use the same currency.
+   */
   const currencies = new Set(
-    students.map((s) =>
-      String(s.currency).toUpperCase()
+    students.map((student) =>
+      String(
+        student.currency || ""
+      ).toUpperCase()
     )
   );
 
@@ -72,7 +139,10 @@ async function preparePaymentLink(
     );
   }
 
-  const prepared = [];
+  /*
+   * Create/find invoices for this month.
+   */
+  const prepared: any[] = [];
 
   for (const student of students) {
     prepared.push(
@@ -83,37 +153,59 @@ async function preparePaymentLink(
     );
   }
 
+  if (!prepared.length) {
+    throw new Error(
+      "Could not prepare invoice"
+    );
+  }
+
   const currency =
     prepared[0].invoice.currency;
 
   const total = prepared
     .reduce(
-      (sum, item) =>
-        sum + Number(item.invoice.amount),
+      (
+        sum: number,
+        item: any
+      ) =>
+        sum +
+        Number(
+          item.invoice.amount
+        ),
       0
     )
     .toFixed(2);
 
+  /*
+   * Parent email.
+   */
   const sameEmail =
     students
-      .map((s) =>
-        normalizeEmail(s.parent_email)
-      )
-      .find(Boolean) || "";
-
-  const samePhone =
-    students
-      .map((s) =>
-        normalizePhone(
-          s.whatsapp_phone ||
-            s.parent_phone
+      .map((student) =>
+        normalizeEmail(
+          student.parent_email
         )
       )
       .find(Boolean) || "";
 
-  const names = students.map(
-    (s) => s.student_name
-  );
+  /*
+   * Parent WhatsApp/phone.
+   */
+  const samePhone =
+    students
+      .map((student) =>
+        normalizePhone(
+          student.whatsapp_phone ||
+            student.parent_phone
+        )
+      )
+      .find(Boolean) || "";
+
+  const names =
+    students.map(
+      (student) =>
+        student.student_name
+    );
 
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL;
@@ -125,12 +217,33 @@ async function preparePaymentLink(
   }
 
   let paymentUrl = "";
-  let groupId: string | null = null;
+  let groupId:
+    | string
+    | null = null;
 
+  /*
+   * ONE CHILD
+   */
   if (prepared.length === 1) {
+    const token =
+      prepared[0]
+        ?.invoice
+        ?.secure_token;
+
+    if (!token) {
+      throw new Error(
+        "Invoice does not have a secure payment token"
+      );
+    }
+
     paymentUrl =
-      `${siteUrl}/pay/${prepared[0].invoice.secure_token}`;
-  } else {
+      `${siteUrl}/pay/${token}`;
+  }
+
+  /*
+   * MULTIPLE CHILDREN
+   */
+  else {
     const invoiceNumber =
       `GPC-${feeMonth
         .slice(0, 7)
@@ -144,16 +257,24 @@ async function preparePaymentLink(
     } = await supabaseAdmin
       .from("payment_groups")
       .insert({
-        fee_month: feeMonth,
-        amount: Number(total),
+        fee_month:
+          feeMonth,
+
+        amount:
+          Number(total),
+
         currency,
+
         invoice_number:
           invoiceNumber,
       })
       .select("*")
       .single();
 
-    if (groupError || !group) {
+    if (
+      groupError ||
+      !group
+    ) {
       throw (
         groupError ||
         new Error(
@@ -162,24 +283,39 @@ async function preparePaymentLink(
       );
     }
 
-    groupId = group.id;
+    groupId =
+      group.id;
 
-    const items = prepared.map(
-      (item) => ({
-        payment_group_id: group.id,
-        invoice_id: item.invoice.id,
-        amount: item.invoice.amount,
-      })
-    );
+    const items =
+      prepared.map(
+        (item: any) => ({
+          payment_group_id:
+            group.id,
+
+          invoice_id:
+            item.invoice.id,
+
+          amount:
+            item.invoice.amount,
+        })
+      );
 
     const {
       error: itemError,
     } = await supabaseAdmin
-      .from("payment_group_items")
+      .from(
+        "payment_group_items"
+      )
       .insert(items);
 
     if (itemError) {
       throw itemError;
+    }
+
+    if (!group.secure_token) {
+      throw new Error(
+        "Payment group does not have a secure payment token"
+      );
     }
 
     paymentUrl =
@@ -191,16 +327,23 @@ async function preparePaymentLink(
       group.id,
       actor,
       {
-        studentIds: students.map(
-          (s) => s.id
-        ),
+        studentIds:
+          students.map(
+            (student) =>
+              student.id
+          ),
+
         total,
+
         currency,
       }
     );
   }
 
-  if (!sameEmail && !samePhone) {
+  if (
+    !sameEmail &&
+    !samePhone
+  ) {
     throw new Error(
       "No parent email or WhatsApp number is available"
     );
@@ -212,23 +355,42 @@ async function preparePaymentLink(
 
   return {
     paymentUrl,
+
     groupId,
-    studentIds: students.map(
-      (s) => s.id
-    ),
+
+    studentIds:
+      students.map(
+        (student) =>
+          student.id
+      ),
+
     total,
+
     currency,
+
     names,
+
     sameEmail,
+
     samePhone,
+
     invoiceId,
+
     feeMonth,
   };
 }
 
+/**
+ * Email + WhatsApp delivery.
+ *
+ * This function runs AFTER the admin request has
+ * already returned successfully.
+ */
 async function deliverPaymentLink(
   prepared: Awaited<
-    ReturnType<typeof preparePaymentLink>
+    ReturnType<
+      typeof preparePaymentLink
+    >
   >,
   actor: string
 ) {
@@ -245,6 +407,9 @@ async function deliverPaymentLink(
     feeMonth,
   } = prepared;
 
+  /*
+   * EMAIL
+   */
   const emailResult: any = {
     attempted: false,
     ok: false,
@@ -253,42 +418,77 @@ async function deliverPaymentLink(
   };
 
   if (sameEmail) {
-    emailResult.attempted = true;
+    emailResult.attempted =
+      true;
 
     try {
       await sendEmail({
         to: sameEmail,
+
         subject:
           `Monthly fee payment — ${names.join(
             " & "
-          )} — ${monthLabel(feeMonth)}`,
+          )} — ${monthLabel(
+            feeMonth
+          )}`,
+
         html: feeEmail({
-          studentNames: names,
-          month: monthLabel(feeMonth),
-          amount: total,
+          studentNames:
+            names,
+
+          month:
+            monthLabel(
+              feeMonth
+            ),
+
+          amount:
+            total,
+
           currency,
-          payUrl: paymentUrl,
+
+          payUrl:
+            paymentUrl,
         }),
       });
 
-      emailResult.ok = true;
-      emailResult.status = "SENT";
+      emailResult.ok =
+        true;
 
-      await supabaseAdmin
-        .from("message_log")
-        .insert({
-          student_id:
-            studentIds.length === 1
-              ? studentIds[0]
-              : null,
-          payment_group_id:
-            groupId,
-          channel: "EMAIL",
-          destination: sameEmail,
-          status: "SENT",
-        });
+      emailResult.status =
+        "SENT";
+
+      try {
+        await supabaseAdmin
+          .from("message_log")
+          .insert({
+            student_id:
+              studentIds.length ===
+              1
+                ? studentIds[0]
+                : null,
+
+            payment_group_id:
+              groupId,
+
+            channel:
+              "EMAIL",
+
+            destination:
+              sameEmail,
+
+            status:
+              "SENT",
+          });
+      } catch (logError) {
+        console.error(
+          "Email message log failed:",
+          logError
+        );
+      }
     } catch (error: any) {
-      emailResult.status = "FAILED";
+      emailResult.status =
+        "FAILED";
+
       emailResult.error =
         error?.message ||
         "Email sending failed";
@@ -298,22 +498,35 @@ async function deliverPaymentLink(
           .from("message_log")
           .insert({
             student_id:
-              studentIds.length === 1
+              studentIds.length ===
+              1
                 ? studentIds[0]
                 : null,
+
             payment_group_id:
               groupId,
-            channel: "EMAIL",
-            destination: sameEmail,
-            status: "FAILED",
+
+            channel:
+              "EMAIL",
+
+            destination:
+              sameEmail,
+
+            status:
+              "FAILED",
           });
-      } catch {
-        // Do not let message-log failure hide the
-        // original email delivery failure.
+      } catch (logError) {
+        console.error(
+          "Failed email log:",
+          logError
+        );
       }
     }
   }
 
+  /*
+   * WHATSAPP
+   */
   let whatsappResult: any = {
     attempted: false,
     ok: false,
@@ -322,69 +535,117 @@ async function deliverPaymentLink(
   };
 
   if (samePhone) {
-    whatsappResult.attempted = true;
+    whatsappResult.attempted =
+      true;
 
     try {
       const result =
         await sendWhatsAppPaymentLink({
           to: samePhone,
-          studentNames: names,
+
+          studentNames:
+            names,
+
           total,
+
           currency,
+
           feeMonth:
-            monthLabel(feeMonth),
+            monthLabel(
+              feeMonth
+            ),
+
           paymentUrl,
+
           logStudentId:
-            studentIds.length === 1
+            studentIds.length ===
+            1
               ? studentIds[0]
               : null,
+
           paymentGroupId:
             groupId,
         });
 
       whatsappResult = {
         ...whatsappResult,
+
         ...result,
-        attempted: true,
-        ok: Boolean(result?.ok),
+
+        attempted:
+          true,
+
+        ok:
+          Boolean(
+            result?.ok
+          ),
+
         status:
           result?.ok
             ? "SENT"
             : "FAILED",
+
         error:
           result?.reason ||
+          result?.error ||
           null,
       };
     } catch (error: any) {
       whatsappResult.status =
         "FAILED";
+
       whatsappResult.error =
         error?.message ||
         "WhatsApp sending failed";
     }
   }
 
-  await logAudit(
-    "PAYMENT_LINK_SEND_ATTEMPT",
-    groupId
-      ? "payment_group"
-      : "invoice",
-    invoiceId,
-    actor,
-    {
-      studentIds,
-      paymentUrl,
-      email: emailResult,
-      whatsapp: whatsappResult,
-    }
-  );
+  /*
+   * AUDIT
+   */
+  try {
+    await logAudit(
+      "PAYMENT_LINK_SEND_ATTEMPT",
+
+      groupId
+        ? "payment_group"
+        : "invoice",
+
+      invoiceId,
+
+      actor,
+
+      {
+        studentIds,
+
+        paymentUrl,
+
+        email:
+          emailResult,
+
+        whatsapp:
+          whatsappResult,
+      }
+    );
+  } catch (auditError) {
+    console.error(
+      "Payment link audit failed:",
+      auditError
+    );
+  }
 
   return {
-    email: emailResult,
-    whatsapp: whatsappResult,
+    email:
+      emailResult,
+
+    whatsapp:
+      whatsappResult,
   };
 }
 
+/**
+ * SEND PAYMENT LINK
+ */
 export async function POST(
   req: Request
 ) {
@@ -397,7 +658,9 @@ export async function POST(
         error:
           "Unauthorized",
       },
-      { status: 401 }
+      {
+        status: 401,
+      }
     );
   }
 
@@ -405,9 +668,26 @@ export async function POST(
     const body =
       await req.json();
 
-    const feeMonth =
-      monthStart(body.month);
+    if (!body.studentId) {
+      return NextResponse.json(
+        {
+          error:
+            "Student ID is required",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
+    const feeMonth =
+      monthStart(
+        body.month
+      );
+
+    /*
+     * Find student.
+     */
     const {
       data: student,
       error: studentError,
@@ -421,35 +701,52 @@ export async function POST(
         )
         .single();
 
-    if (studentError || !student) {
+    if (
+      studentError ||
+      !student
+    ) {
       return NextResponse.json(
         {
           error:
             "Student not found",
         },
-        { status: 404 }
+        {
+          status: 404,
+        }
       );
     }
 
+    /*
+     * Check for other children belonging
+     * to the same parent.
+     */
     const matches =
       await matchingStudents(
         student
       );
 
+    /*
+     * Ask admin whether to merge.
+     */
     if (
       !body.forceSeparate &&
       !body.mergeConfirmed &&
       matches.length
     ) {
       return NextResponse.json({
-        needsMergeDecision: true,
+        needsMergeDecision:
+          true,
 
         student: {
-          id: student.id,
+          id:
+            student.id,
+
           name:
             student.student_name,
+
           email:
             student.parent_email,
+
           phone:
             student.whatsapp_phone ||
             student.parent_phone,
@@ -457,47 +754,64 @@ export async function POST(
 
         matches:
           matches.map(
-            (s: any) => ({
-              id: s.id,
+            (item: any) => ({
+              id:
+                item.id,
+
               name:
-                s.student_name,
-              age: s.age,
+                item.student_name,
+
+              age:
+                item.age,
+
               country:
-                s.country,
+                item.country,
+
               currency:
-                s.currency,
+                item.currency,
+
               fee:
-                s.monthly_fee,
+                item.monthly_fee,
+
               email:
-                s.parent_email,
+                item.parent_email,
+
               phone:
-                s.whatsapp_phone ||
-                s.parent_phone,
+                item.whatsapp_phone ||
+                item.parent_phone,
             })
           ),
       });
     }
 
-    let selected = [
-      student,
-    ];
+    /*
+     * Default = one student.
+     */
+    let selected =
+      [student];
 
-    if (body.mergeConfirmed) {
-      const ids = Array.from(
-        new Set([
-          student.id,
-          ...(
-            Array.isArray(
+    /*
+     * MERGED PAYMENT.
+     */
+    if (
+      body.mergeConfirmed
+    ) {
+      const ids =
+        Array.from(
+          new Set([
+            student.id,
+
+            ...(Array.isArray(
               body.studentIds
             )
               ? body.studentIds
-              : []
-          ),
-        ])
-      );
+              : []),
+          ])
+        );
 
       const {
         data: rows,
+        error: rowsError,
       } =
         await supabaseAdmin
           .from("students")
@@ -507,14 +821,32 @@ export async function POST(
             ids
           );
 
+      if (rowsError) {
+        throw rowsError;
+      }
+
       selected =
         rows || [];
+
+      if (!selected.length) {
+        throw new Error(
+          "No students found for merged payment"
+        );
+      }
     }
 
-    const actor = String(
-      session.email || "admin"
-    );
+    const actor =
+      String(
+        session.email ||
+        "admin"
+      );
 
+    /*
+     * IMPORTANT:
+     *
+     * Only prepare the payment link here.
+     * Do NOT wait for email/WhatsApp.
+     */
     const prepared =
       await preparePaymentLink(
         selected,
@@ -522,42 +854,92 @@ export async function POST(
         actor
       );
 
-    const delivery =
-      await deliverPaymentLink(
-        prepared,
-        actor
-      );
+    /*
+     * Start email/WhatsApp delivery after
+     * the response is ready.
+     */
+    after(async () => {
+      try {
+        await deliverPaymentLink(
+          prepared,
+          actor
+        );
+      } catch (error) {
+        console.error(
+          "Background payment-link delivery failed:",
+          error
+        );
+      }
+    });
 
+    /*
+     * RETURN IMMEDIATELY.
+     */
     return NextResponse.json({
       ok: true,
+
       paymentUrl:
         prepared.paymentUrl,
+
       groupId:
         prepared.groupId,
+
       studentIds:
         prepared.studentIds,
+
       total:
         prepared.total,
+
       currency:
         prepared.currency,
-      email:
-        delivery.email,
-      whatsapp:
-        delivery.whatsapp,
+
+      email: {
+        queued:
+          Boolean(
+            prepared.sameEmail
+          ),
+
+        status:
+          prepared.sameEmail
+            ? "QUEUED"
+            : "SKIPPED",
+      },
+
+      whatsapp: {
+        queued:
+          Boolean(
+            prepared.samePhone
+          ),
+
+        status:
+          prepared.samePhone
+            ? "QUEUED"
+            : "SKIPPED",
+      },
+
       emailSent:
-        delivery.email?.status === "SENT",
+        false,
+
       whatsappSent:
-        delivery.whatsapp?.status === "SENT",
+        false,
     });
   } catch (error: any) {
+    console.error(
+      "Payment link request failed:",
+      error
+    );
+
     return NextResponse.json(
       {
         ok: false,
+
         error:
           error?.message ||
           "Could not send payment link",
       },
-      { status: 400 }
+      {
+        status: 400,
+      }
     );
   }
 }
