@@ -150,7 +150,7 @@ export default function AdminClient({
     }));
   }
 
-  async function addStudent() {
+  async function addStudent(keepOpen = false) {
     if (
       !studentForm.serial_number.trim() ||
       !studentForm.student_name.trim() ||
@@ -210,8 +210,15 @@ export default function AdminClient({
         active: true,
       });
 
-      setAddStudentOpen(false);
-      showToast("Student added successfully.");
+      if (!keepOpen) {
+        setAddStudentOpen(false);
+      }
+
+      showToast(
+        keepOpen
+          ? "Student added. Ready for the next student."
+          : "Student added successfully."
+      );
     } catch {
       showToast("Could not connect to the student service.");
     } finally {
@@ -1346,212 +1353,583 @@ export default function AdminClient({
       </section>
 
       {addStudentOpen && (
-        <div className="modalBackdrop">
-          <div className="modal card" style={{ maxWidth: 900 }}>
-            <div className="eyebrow">STUDENT MANAGEMENT</div>
-            <h2>Add Student</h2>
+        <div className="modalBackdrop studentModalBackdrop">
+          <style>{`
+            .studentModalBackdrop {
+              align-items: center;
+              justify-content: center;
+              padding: 18px;
+              overflow: hidden;
+            }
 
-            <div className="filterGrid" style={{ marginTop: 20 }}>
-              <input
-                placeholder="Student Number *"
-                value={studentForm.serial_number}
-                onChange={(event) =>
-                  updateStudentForm("serial_number", event.target.value)
-                }
-              />
+            .studentModal {
+              width: min(980px, 100%);
+              max-width: 980px !important;
+              max-height: min(92vh, 900px);
+              padding: 0 !important;
+              overflow: hidden;
+              display: flex;
+              flex-direction: column;
+              border-radius: 22px;
+            }
 
-              <input
-                placeholder="Student Name *"
-                value={studentForm.student_name}
-                onChange={(event) =>
-                  updateStudentForm("student_name", event.target.value)
-                }
-              />
+            .studentModalHeader {
+              flex: 0 0 auto;
+              padding: 24px 28px 18px;
+              border-bottom: 1px solid #e8edf5;
+              background: #fff;
+            }
 
-              <input
-                type="number"
-                placeholder="Age"
-                value={studentForm.age}
-                onChange={(event) =>
-                  updateStudentForm("age", event.target.value)
-                }
-              />
+            .studentModalHeader h2 {
+              margin: 5px 0 4px;
+              font-size: 25px;
+            }
 
-              <select
-                value={studentForm.gender}
-                onChange={(event) =>
-                  updateStudentForm("gender", event.target.value)
-                }
-              >
-                <option value="">Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
+            .studentModalHeader p {
+              margin: 0;
+              color: #64748b;
+              font-size: 13px;
+            }
 
-              <select
-                value={studentForm.country}
-                onChange={(event) =>
-                  updateStudentForm("country", event.target.value)
-                }
-              >
-                {COUNTRIES.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+            .studentModalBody {
+              flex: 1 1 auto;
+              overflow-y: auto;
+              padding: 24px 28px 28px;
+              background: #fbfcfe;
+            }
 
-              <select
-                value={studentForm.currency}
-                onChange={(event) =>
-                  updateStudentForm("currency", event.target.value)
-                }
-              >
-                {CURRENCIES.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+            .studentFormSection {
+              background: #fff;
+              border: 1px solid #e5eaf2;
+              border-radius: 16px;
+              padding: 18px;
+              margin-bottom: 16px;
+            }
 
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Monthly Fee *"
-                value={studentForm.monthly_fee}
-                onChange={(event) =>
-                  updateStudentForm("monthly_fee", event.target.value)
-                }
-              />
+            .studentFormSection:last-child {
+              margin-bottom: 0;
+            }
 
-              <input
-                placeholder="Class Timing"
-                value={studentForm.timing}
-                onChange={(event) =>
-                  updateStudentForm("timing", event.target.value)
-                }
-              />
+            .studentFormSectionTitle {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              margin-bottom: 15px;
+              color: #071f49;
+              font-size: 16px;
+              font-weight: 800;
+            }
 
-              <input
-                placeholder="Days"
-                value={studentForm.days}
-                onChange={(event) =>
-                  updateStudentForm("days", event.target.value)
-                }
-              />
+            .studentFormSectionTitle span {
+              width: 28px;
+              height: 28px;
+              display: grid;
+              place-items: center;
+              border-radius: 9px;
+              background: #eef3fa;
+              color: #071f49;
+              font-size: 13px;
+              font-weight: 900;
+            }
 
-              <input
-                placeholder="Teacher Name"
-                value={studentForm.teacher_name}
-                onChange={(event) =>
-                  updateStudentForm("teacher_name", event.target.value)
-                }
-              />
+            .studentFormGrid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 15px 18px;
+            }
 
-              <input
-                placeholder="Parent Name"
-                value={studentForm.parent_name}
-                onChange={(event) =>
-                  updateStudentForm("parent_name", event.target.value)
-                }
-              />
+            .studentField {
+              min-width: 0;
+            }
 
-              <input
-                type="email"
-                placeholder="Parent Email"
-                value={studentForm.parent_email}
-                onChange={(event) =>
-                  updateStudentForm("parent_email", event.target.value)
-                }
-              />
+            .studentField.full {
+              grid-column: 1 / -1;
+            }
 
-              <input
-                placeholder="Parent Phone"
-                value={studentForm.parent_phone}
-                onChange={(event) =>
-                  updateStudentForm("parent_phone", event.target.value)
-                }
-              />
+            .studentField label {
+              display: block;
+              margin: 0 0 7px;
+              color: #263750;
+              font-size: 12px;
+              font-weight: 800;
+            }
 
-              <input
-                placeholder="WhatsApp Number"
-                value={studentForm.whatsapp_phone}
-                onChange={(event) =>
-                  updateStudentForm("whatsapp_phone", event.target.value)
-                }
-              />
+            .studentField label .required {
+              color: #d18b00;
+            }
+
+            .studentField input,
+            .studentField select {
+              width: 100%;
+              min-height: 48px;
+              box-sizing: border-box;
+              padding: 12px 14px;
+              border: 1px solid #dbe3ee;
+              border-radius: 11px;
+              background: #fff;
+              color: #12203a;
+              font-size: 14px;
+              outline: none;
+            }
+
+            .studentField input:focus,
+            .studentField select:focus {
+              border-color: #b98510;
+              box-shadow: 0 0 0 3px rgba(185,133,16,.10);
+            }
+
+            .studentGroups {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 10px;
+            }
+
+            .studentGroupOption {
+              display: flex;
+              align-items: center;
+              gap: 9px;
+              min-height: 48px;
+              padding: 0 13px;
+              box-sizing: border-box;
+              border: 1px solid #dbe3ee;
+              border-radius: 11px;
+              background: #fff;
+              color: #263750;
+              font-size: 13px;
+              font-weight: 700;
+              cursor: pointer;
+            }
+
+            .studentGroupOption:has(input:checked) {
+              border-color: #c99522;
+              background: #fffbef;
+            }
+
+            .studentGroupOption input,
+            .studentActive input {
+              width: 17px;
+              height: 17px;
+              margin: 0;
+              accent-color: #b98510;
+            }
+
+            .studentActive {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              margin-top: 14px;
+              color: #263750;
+              font-size: 13px;
+              font-weight: 800;
+              cursor: pointer;
+            }
+
+            .studentModalFooter {
+              flex: 0 0 auto;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
+              padding: 16px 28px;
+              border-top: 1px solid #e8edf5;
+              background: #fff;
+            }
+
+            .studentFooterHint {
+              color: #64748b;
+              font-size: 12px;
+            }
+
+            .studentFooterActions {
+              display: flex;
+              gap: 9px;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+            }
+
+            .studentFooterActions .btn {
+              min-height: 44px;
+            }
+
+            @media (max-width: 760px) {
+              .studentModalBackdrop {
+                padding: 10px;
+              }
+
+              .studentModal {
+                max-height: 96vh;
+                border-radius: 16px;
+              }
+
+              .studentModalHeader,
+              .studentModalBody {
+                padding-left: 18px;
+                padding-right: 18px;
+              }
+
+              .studentFormGrid {
+                grid-template-columns: 1fr;
+              }
+
+              .studentField.full {
+                grid-column: auto;
+              }
+
+              .studentGroups {
+                grid-template-columns: 1fr;
+              }
+
+              .studentModalFooter {
+                padding: 14px 18px;
+                align-items: stretch;
+                flex-direction: column;
+              }
+
+              .studentFooterActions {
+                width: 100%;
+              }
+
+              .studentFooterActions .btn {
+                flex: 1 1 auto;
+              }
+            }
+          `}</style>
+
+          <div className="modal card studentModal">
+            <div className="studentModalHeader">
+              <div className="eyebrow">STUDENT MANAGEMENT</div>
+              <h2>Add Student</h2>
+              <p>
+                Enter the student details below. You can add one student or keep
+                this form open and continue adding students.
+              </p>
             </div>
 
-            <div style={{ marginTop: 20 }}>
-              <b>Groups</b>
+            <div className="studentModalBody">
+              <section className="studentFormSection">
+                <div className="studentFormSectionTitle">
+                  <span>1</span>
+                  Student Information
+                </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  marginTop: 10,
-                }}
-              >
-                {GROUPS.map((item) => (
-                  <label
-                    key={item}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      padding: "10px 14px",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 12,
-                      cursor: "pointer",
-                    }}
-                  >
+                <div className="studentFormGrid">
+                  <div className="studentField">
+                    <label>
+                      Serial Number <span className="required">*</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={studentForm.groups.includes(item)}
-                      onChange={() => toggleStudentGroup(item)}
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 21"
+                      value={studentForm.serial_number}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "serial_number",
+                          event.target.value
+                        )
+                      }
                     />
-                    {item}
-                  </label>
-                ))}
-              </div>
+                  </div>
+
+                  <div className="studentField">
+                    <label>
+                      Student Name <span className="required">*</span>
+                    </label>
+                    <input
+                      placeholder="Full student name"
+                      value={studentForm.student_name}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "student_name",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Age</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      placeholder="Student age"
+                      value={studentForm.age}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "age",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Gender</label>
+                    <select
+                      value={studentForm.gender}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "gender",
+                          event.target.value
+                        )
+                      }
+                    >
+                      <option value="">Select gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+
+                  <div className="studentField">
+                    <label>
+                      Country <span className="required">*</span>
+                    </label>
+                    <select
+                      value={studentForm.country}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "country",
+                          event.target.value
+                        )
+                      }
+                    >
+                      {COUNTRIES.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="studentField">
+                    <label>
+                      Currency <span className="required">*</span>
+                    </label>
+                    <select
+                      value={studentForm.currency}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "currency",
+                          event.target.value
+                        )
+                      }
+                    >
+                      {CURRENCIES.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="studentField">
+                    <label>
+                      Monthly Fee <span className="required">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="e.g. 100"
+                      value={studentForm.monthly_fee}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "monthly_fee",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Class Timing</label>
+                    <input
+                      placeholder="e.g. 6–7 PM"
+                      value={studentForm.timing}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "timing",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Days</label>
+                    <input
+                      placeholder="e.g. Mon, Wed, Sat"
+                      value={studentForm.days}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "days",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Teacher Name</label>
+                    <input
+                      placeholder="Teacher name"
+                      value={studentForm.teacher_name}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "teacher_name",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="studentFormSection">
+                <div className="studentFormSectionTitle">
+                  <span>2</span>
+                  Parent / Contact Details
+                </div>
+
+                <div className="studentFormGrid">
+                  <div className="studentField">
+                    <label>Parent Name</label>
+                    <input
+                      placeholder="Parent / guardian name"
+                      value={studentForm.parent_name}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "parent_name",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Parent Email</label>
+                    <input
+                      type="email"
+                      placeholder="parent@example.com"
+                      value={studentForm.parent_email}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "parent_email",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>Parent Phone</label>
+                    <input
+                      type="tel"
+                      placeholder="+1 000 000 0000"
+                      value={studentForm.parent_phone}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "parent_phone",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="studentField">
+                    <label>WhatsApp Number</label>
+                    <input
+                      type="tel"
+                      placeholder="+1 000 000 0000"
+                      value={studentForm.whatsapp_phone}
+                      onChange={(event) =>
+                        updateStudentForm(
+                          "whatsapp_phone",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="studentFormSection">
+                <div className="studentFormSectionTitle">
+                  <span>3</span>
+                  Learning Groups
+                </div>
+
+                <div className="studentGroups">
+                  {GROUPS.map((item) => (
+                    <label
+                      className="studentGroupOption"
+                      key={item}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={studentForm.groups.includes(item)}
+                        onChange={() =>
+                          toggleStudentGroup(item)
+                        }
+                      />
+                      {item}
+                    </label>
+                  ))}
+                </div>
+
+                <label className="studentActive">
+                  <input
+                    type="checkbox"
+                    checked={studentForm.active}
+                    onChange={(event) =>
+                      updateStudentForm(
+                        "active",
+                        event.target.checked
+                      )
+                    }
+                  />
+                  Student is Active
+                </label>
+              </section>
             </div>
 
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginTop: 18,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={studentForm.active}
-                onChange={(event) =>
-                  updateStudentForm("active", event.target.checked)
-                }
-              />
-              Student is Active
-            </label>
+            <div className="studentModalFooter">
+              <div className="studentFooterHint">
+                * Required fields
+              </div>
 
-            <div className="modalActions">
-              <button
-                className="btn btnGhost"
-                onClick={() => setAddStudentOpen(false)}
-                disabled={addingStudent}
-              >
-                Cancel
-              </button>
+              <div className="studentFooterActions">
+                <button
+                  className="btn btnGhost"
+                  onClick={() =>
+                    setAddStudentOpen(false)
+                  }
+                  disabled={addingStudent}
+                >
+                  Cancel
+                </button>
 
-              <button
-                className="btn btnGold"
-                onClick={addStudent}
-                disabled={addingStudent}
-              >
-                {addingStudent ? "Adding..." : "Add Student"}
-              </button>
+                <button
+                  className="btn btnPrimary"
+                  onClick={() => addStudent(true)}
+                  disabled={addingStudent}
+                >
+                  {addingStudent
+                    ? "Saving..."
+                    : "Add & Add Another"}
+                </button>
+
+                <button
+                  className="btn btnGold"
+                  onClick={() => addStudent(false)}
+                  disabled={addingStudent}
+                >
+                  {addingStudent
+                    ? "Saving..."
+                    : "Add Student"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
