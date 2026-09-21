@@ -352,7 +352,6 @@ async function deliverPaymentLink(
             ? "SENT"
             : "FAILED",
         error:
-          result?.error ||
           result?.reason ||
           null,
       };
