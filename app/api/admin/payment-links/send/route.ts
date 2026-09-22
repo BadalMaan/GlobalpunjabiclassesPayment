@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
@@ -854,26 +854,15 @@ export async function POST(
       );
 
     /*
-     * Start email/WhatsApp delivery after
-     * the response is ready.
+     /*
+     * Deliver email and WhatsApp before returning the response.
+     * This gives the admin dashboard the REAL delivery result.
      */
-    after(async () => {
-      try {
-        await deliverPaymentLink(
-          prepared,
-          actor
-        );
-      } catch (error) {
-        console.error(
-          "Background payment-link delivery failed:",
-          error
-        );
-      }
-    });
+    const delivery = await deliverPaymentLink(
+      prepared,
+      actor
+    );
 
-    /*
-     * RETURN IMMEDIATELY.
-     */
     return NextResponse.json({
       ok: true,
 
@@ -892,53 +881,19 @@ export async function POST(
       currency:
         prepared.currency,
 
-      email: {
-        queued:
-          Boolean(
-            prepared.sameEmail
-          ),
+      email:
+        delivery.email,
 
-        status:
-          prepared.sameEmail
-            ? "QUEUED"
-            : "SKIPPED",
-      },
-
-      whatsapp: {
-        queued:
-          Boolean(
-            prepared.samePhone
-          ),
-
-        status:
-          prepared.samePhone
-            ? "QUEUED"
-            : "SKIPPED",
-      },
+      whatsapp:
+        delivery.whatsapp,
 
       emailSent:
-        false,
+        Boolean(
+          delivery.email?.ok
+        ),
 
       whatsappSent:
-        false,
+        Boolean(
+          delivery.whatsapp?.ok
+        ),
     });
-  } catch (error: any) {
-    console.error(
-      "Payment link request failed:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        ok: false,
-
-        error:
-          error?.message ||
-          "Could not send payment link",
-      },
-      {
-        status: 400,
-      }
-    );
-  }
-}
