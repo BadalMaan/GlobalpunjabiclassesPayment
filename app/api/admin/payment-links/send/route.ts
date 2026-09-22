@@ -897,3 +897,23 @@ export async function POST(
           delivery.whatsapp?.ok
         ),
     });
+  } catch (error: any) {
+    console.error(
+      "Payment link request failed:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        ok: false,
+
+        error:
+          error?.message ||
+          "Could not send payment link",
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+}
