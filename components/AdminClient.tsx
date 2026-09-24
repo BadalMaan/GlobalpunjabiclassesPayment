@@ -71,6 +71,19 @@ function formatMethod(
   return method.replace(/_/g, " ");
 }
 
+function formatAmount(currency: string, amount: number) {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(amount || 0));
+  } catch {
+    return `${currency} ${Number(amount || 0).toFixed(2)}`;
+  }
+}
+
 async function readJson(response: Response) {
   try {
     return await response.json();
@@ -619,6 +632,26 @@ export default function AdminClient({
     });
   }, [students]);
 
+  const receivedCurrencyStats = useMemo(() => {
+    return CURRENCIES.map((item) => {
+      const paidInvoices = invoices.filter(
+        (invoice) =>
+          invoice.status === "PAID" &&
+          String(invoice.currency || "").toUpperCase() === item
+      );
+
+      return {
+        currency: item,
+        count: paidInvoices.length,
+        total: paidInvoices.reduce(
+          (total, invoice) =>
+            total + Number(invoice.amount || 0),
+          0
+        ),
+      };
+    });
+  }, [invoices]);
+
   function showToast(message: string) {
     setToast(message);
 
@@ -645,14 +678,26 @@ export default function AdminClient({
           ? "SENT"
           : "SKIPPED");
 
+    const emailReason =
+      data?.email?.reason ||
+      data?.email?.error ||
+      data?.email?.message ||
+      "";
+
+    const whatsappReason =
+      data?.whatsapp?.reason ||
+      data?.whatsapp?.error ||
+      data?.whatsapp?.message ||
+      "";
+
     const emailText =
       emailStatus === "SENT"
         ? "Email sent"
         : emailStatus === "QUEUED"
           ? "Email queued"
           : emailStatus === "FAILED"
-            ? "Email failed"
-            : "Email skipped";
+            ? `Email failed${emailReason ? `: ${emailReason}` : ""}`
+            : `Email skipped${emailReason ? `: ${emailReason}` : ""}`;
 
     const whatsappText =
       whatsappStatus === "SENT"
@@ -660,8 +705,8 @@ export default function AdminClient({
         : whatsappStatus === "QUEUED"
           ? "WhatsApp queued"
           : whatsappStatus === "FAILED"
-            ? "WhatsApp failed"
-            : "WhatsApp skipped";
+            ? `WhatsApp failed${whatsappReason ? `: ${whatsappReason}` : ""}`
+            : `WhatsApp skipped${whatsappReason ? `: ${whatsappReason}` : ""}`;
 
     if (
       emailStatus === "SENT" &&
@@ -1372,11 +1417,27 @@ export default function AdminClient({
             </thead>
 
             <tbody>
-              {visibleRows.map(
-                ({
-                  student,
-                  invoice,
-                }) => (
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={11}
+                    style={{
+                      textAlign: "center",
+                      padding: "42px 20px",
+                    }}
+                  >
+                    <b>No students found</b>
+                    <div className="mutedText" style={{ marginTop: 6 }}>
+                      Try changing your search or filters.
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                visibleRows.map(
+                  ({
+                    student,
+                    invoice,
+                  }) => (
                   <tr
                     key={student.id}
                   >
@@ -1466,6 +1527,16 @@ export default function AdminClient({
                               )}
                             </small>
                           )}
+
+                          {invoice.status === "PAID" && (
+                            <small className="methodLabel">
+                              Received:{" "}
+                              {formatAmount(
+                                invoice.currency,
+                                Number(invoice.amount || 0)
+                              )}
+                            </small>
+                          )}
                         </>
                       ) : (
                         <span className="statusPill statusPending">
@@ -1477,7 +1548,7 @@ export default function AdminClient({
                     <td>
                       <div className="actionStack">
                         <button
-                          className="btn btnGhost btnSmall"
+                          className="btn btnPrimary btnSmall"
                           disabled={
                             sending ===
                               student.id ||
@@ -1569,6 +1640,7 @@ export default function AdminClient({
                       </div>
                     </td>
                   </tr>
+                  )
                 )
               )}
             </tbody>
@@ -1660,9 +1732,53 @@ export default function AdminClient({
                   </span>
 
                   <strong>
-                    {item.currency}{" "}
-                    {item.total.toFixed(
-                      2
+                    {formatAmount(
+                      item.currency,
+                      item.total
+                    )}
+                  </strong>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="card dashboardSection receivedMoneyCard">
+          <div className="sectionHeading">
+            <div>
+              <div className="eyebrow">
+                ACTUAL PAYMENTS RECEIVED
+              </div>
+
+              <h2>
+                Money Received
+              </h2>
+
+              <p className="mutedText">
+                Only invoices marked RECEIVED / PAID are included.
+                Amounts are kept separate by currency.
+              </p>
+            </div>
+          </div>
+
+          <div className="currencyList">
+            {receivedCurrencyStats.map(
+              (item) => (
+                <div
+                  className="currencyRow receivedCurrencyRow"
+                  key={item.currency}
+                >
+                  <div>
+                    <b>{item.currency}</b>
+                    <div className="mutedText">
+                      {item.count} received payment{item.count === 1 ? "" : "s"}
+                    </div>
+                  </div>
+
+                  <strong>
+                    {formatAmount(
+                      item.currency,
+                      item.total
                     )}
                   </strong>
                 </div>
