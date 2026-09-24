@@ -1078,7 +1078,7 @@ export default function AdminClient({
 
   return (
     <main
-      className="container"
+      className="container adminDashboard"
       style={{
         padding:
           "30px 20px 80px",
