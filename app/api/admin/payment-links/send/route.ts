@@ -415,7 +415,12 @@ async function deliverPaymentLink(
     ok: false,
     status: "SKIPPED",
     error: null,
+    reason: null,
   };
+
+  if (!sameEmail) {
+    emailResult.reason = "No parent email address is available";
+  }
 
   if (sameEmail) {
     emailResult.attempted =
@@ -451,11 +456,9 @@ async function deliverPaymentLink(
         }),
       });
 
-      emailResult.ok =
-        true;
-
-      emailResult.status =
-        "SENT";
+      emailResult.ok = true;
+      emailResult.status = "SENT";
+      emailResult.reason = null;
 
       try {
         await supabaseAdmin
@@ -492,6 +495,12 @@ async function deliverPaymentLink(
       emailResult.error =
         error?.message ||
         "Email sending failed";
+
+      emailResult.reason =
+        error?.message ||
+        "Email sending failed";
+
+      console.error("Payment email delivery failed:", error);
 
       try {
         await supabaseAdmin
@@ -891,6 +900,14 @@ export async function POST(
         Boolean(
           delivery.email?.ok
         ),
+
+      emailStatus:
+        delivery.email?.status || "SKIPPED",
+
+      emailReason:
+        delivery.email?.reason ||
+        delivery.email?.error ||
+        null,
 
       whatsappSent:
         Boolean(
