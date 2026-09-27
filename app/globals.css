@@ -253,3 +253,600 @@ button { -webkit-tap-highlight-color: transparent; }
   .modalActions .btn { width:100%; }
   .toast { right:15px; left:15px; bottom:15px; max-width:none; }
 }
+
+
+/* =========================================================
+   GLOBAL PUNJABI CLASSES
+   PREMIUM PAYMENT EXPERIENCE
+   ========================================================= */
+
+.paymentExperience {
+  width: min(1120px, 100%);
+  margin: 24px auto 0;
+  padding-bottom: 20px;
+}
+
+.paymentBrand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.paymentBrandMark {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, var(--navy), var(--navy-2));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 7px 18px rgba(11, 42, 91, 0.13);
+}
+
+.paymentBrand strong {
+  display: block;
+  color: var(--navy);
+  font-size: 15px;
+  letter-spacing: -0.2px;
+}
+
+.paymentBrand span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.paymentLayout {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.paymentSummary,
+.paymentMain {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.paymentSummary {
+  padding: 26px;
+  position: relative;
+  overflow: hidden;
+}
+
+.paymentSummary::after {
+  content: "";
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  right: -82px;
+  top: -78px;
+  border-radius: 50%;
+  background: #f1f6fc;
+  pointer-events: none;
+}
+
+.paymentEyebrow {
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.7px;
+}
+
+.paymentSummary h1 {
+  color: var(--navy);
+  font-size: 25px;
+  line-height: 1.15;
+  letter-spacing: -0.7px;
+  margin: 10px 0 5px;
+  position: relative;
+  z-index: 1;
+}
+
+.paymentPeriod {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paymentTotalBox {
+  margin-top: 18px;
+  padding: 17px;
+  border: 1px solid #e5ebf3;
+  background: #f8fafd;
+  border-radius: 15px;
+}
+
+.paymentTotalBox span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.paymentTotalBox strong {
+  display: block;
+  color: var(--navy);
+  font-size: 29px;
+  letter-spacing: -1px;
+}
+
+.paymentStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  border: 1px solid transparent;
+}
+
+.paymentStatus > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: block;
+}
+
+.paymentStatusPending {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: #f6d1ce;
+}
+
+.paymentStatusPending > span {
+  background: var(--red);
+}
+
+.paymentStatusProgress {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-color: #f2dfad;
+}
+
+.paymentStatusProgress > span {
+  background: var(--amber);
+}
+
+.paymentSecurity {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #edf1f6;
+}
+
+.paymentSecurity > span {
+  font-size: 17px;
+}
+
+.paymentSecurity b {
+  display: block;
+  color: var(--navy);
+  font-size: 11px;
+}
+
+.paymentSecurity small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.paymentMain {
+  min-width: 0;
+  padding: 28px;
+}
+
+.paymentMainHeader {
+  margin-bottom: 20px;
+}
+
+.paymentMainHeader h2,
+.methodScreenHeader h2 {
+  color: var(--navy);
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.7px;
+  margin: 7px 0 6px;
+}
+
+.paymentMainHeader p,
+.methodScreenHeader p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.paymentMethods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.paymentMethodCard {
+  appearance: none;
+  width: 100%;
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  text-align: left;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+
+.paymentMethodCard:hover {
+  transform: translateY(-2px);
+  border-color: #c7d5e5;
+  background: #fcfdff;
+  box-shadow: var(--shadow-md);
+}
+
+.paymentMethodCard:focus-visible,
+.backPaymentButton:focus-visible,
+.manualPaymentBox input:focus-visible {
+  outline: none;
+  border-color: #91a9c7;
+  box-shadow: 0 0 0 3px rgba(35, 82, 139, 0.1);
+}
+
+.paymentMethodIcon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #eef4fb;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 900;
+  border: 1px solid #e0e9f4;
+}
+
+.paymentMethodIcon.large {
+  width: 50px;
+  height: 50px;
+  flex-basis: 50px;
+  border-radius: 14px;
+  font-size: 16px;
+}
+
+.paymentMethodContent {
+  min-width: 0;
+  flex: 1;
+}
+
+.paymentMethodContent strong {
+  display: block;
+  color: var(--navy);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.paymentMethodContent small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.paymentMethodArrow {
+  color: #8a99ad;
+  font-size: 18px;
+  font-weight: 800;
+  transition:
+    transform 0.16s ease,
+    color 0.16s ease;
+}
+
+.paymentMethodCard:hover .paymentMethodArrow {
+  transform: translateX(3px);
+  color: var(--navy);
+}
+
+.paymentNotice {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid #e4ebf3;
+  border-radius: 14px;
+  background: #f8fafd;
+}
+
+.paymentNotice > span {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--green-bg);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.paymentNotice b {
+  color: var(--navy);
+  font-size: 11px;
+}
+
+.paymentNotice p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  margin: 3px 0 0;
+}
+
+.methodScreen {
+  min-width: 0;
+}
+
+.backPaymentButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--navy);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  margin-bottom: 20px;
+}
+
+.backPaymentButton:hover {
+  color: var(--gold);
+}
+
+.methodScreenHeader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.methodAmountBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin: 22px 0 13px;
+  padding: 15px 17px;
+  border: 1px solid #e5ebf3;
+  border-radius: 15px;
+  background: #f8fafd;
+}
+
+.methodAmountBar span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.methodAmountBar strong {
+  color: var(--navy);
+  font-size: 20px;
+  letter-spacing: -0.4px;
+}
+
+.methodContentCard {
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  padding: 19px;
+  background: #fff;
+}
+
+.methodInfo b {
+  color: var(--navy);
+  font-size: 13px;
+}
+
+.methodInfo p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 7px 0 16px;
+}
+
+.methodPrimaryButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  min-height: 48px;
+}
+
+.manualPaymentBox {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #edf1f6;
+}
+
+.manualPaymentBox label {
+  display: block;
+  color: var(--navy);
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 7px;
+}
+
+.manualPaymentBox input {
+  width: 100%;
+  min-height: 45px;
+  padding: 11px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  font-size: 12px;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.manualPaymentBox input::placeholder {
+  color: #97a4b5;
+}
+
+.manualPaymentBox .btn {
+  width: 100%;
+  margin-top: 9px;
+}
+
+.paymentMessage {
+  margin-top: 13px;
+}
+
+.paymentSuccessPage {
+  width: min(680px, 100%);
+  margin: 70px auto;
+}
+
+.paymentSuccessCard {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow-md);
+  padding: 42px 30px;
+  text-align: center;
+}
+
+.paymentSuccessCard h1 {
+  color: var(--navy);
+  margin: 5px 0 8px;
+  font-size: 30px;
+  letter-spacing: -0.8px;
+}
+
+.paymentSuccessCard p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+
+.paymentSuccessAmount {
+  display: inline-block;
+  margin: 20px 0 12px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  background: var(--green-bg);
+  color: var(--green);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.paymentSuccessCard small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.upiList {
+  margin-top: 8px;
+}
+
+
+/* =========================================================
+   PAYMENT RESPONSIVE DESIGN
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+  .paymentLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .paymentSummary {
+    padding: 22px;
+  }
+
+  .paymentMethods {
+    grid-template-columns: 1fr 1fr;
+  }
+
+}
+
+
+@media (max-width: 650px) {
+
+  .paymentExperience {
+    margin-top: 10px;
+  }
+
+  .paymentBrand {
+    margin-bottom: 12px;
+  }
+
+  .paymentBrandMark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .paymentSummary,
+  .paymentMain {
+    border-radius: 18px;
+  }
+
+  .paymentMain {
+    padding: 20px 16px;
+  }
+
+  .paymentSummary {
+    padding: 20px;
+  }
+
+  .paymentMethods {
+    grid-template-columns: 1fr;
+  }
+
+  .paymentMainHeader h2,
+  .methodScreenHeader h2 {
+    font-size: 23px;
+  }
+
+  .methodScreenHeader {
+    align-items: flex-start;
+  }
+
+  .methodAmountBar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .paymentSuccessPage {
+    margin: 35px auto;
+  }
+
+  .paymentSuccessCard {
+    padding: 34px 20px;
+  }
+
+}
