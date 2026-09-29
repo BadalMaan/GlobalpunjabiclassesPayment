@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type AnyRecord = Record<string, any>;
 
@@ -132,6 +132,27 @@ export default function AdminClient({
   const [deletingStudent, setDeletingStudent] =
     useState<string | null>(null);
 
+  const [openActionsId, setOpenActionsId] =
+    useState<string | null>(null);
+
+  const [customFeeStudent, setCustomFeeStudent] =
+    useState<AnyRecord | null>(null);
+
+  const [customFeeAmount, setCustomFeeAmount] =
+    useState("");
+
+  const [customFeeCurrency, setCustomFeeCurrency] =
+    useState("AUD");
+
+  const [customFeeDescription, setCustomFeeDescription] =
+    useState("Custom Fee");
+
+  const [customFeeBusy, setCustomFeeBusy] =
+    useState(false);
+
+  const [customFeeLink, setCustomFeeLink] =
+    useState("");
+
   const [studentForm, setStudentForm] = useState({
     serial_number: "",
     student_name: "",
@@ -150,6 +171,22 @@ export default function AdminClient({
     currency: "USD",
     active: true,
   });
+
+  useEffect(() => {
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+
+      if (!target?.closest?.("[data-student-actions]")) {
+        setOpenActionsId(null);
+      }
+    }
+
+    document.addEventListener("click", handleDocumentClick);
+
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+    };
+  }, []);
 
   function updateStudentForm(field: string, value: any) {
     setStudentForm((current) => ({
@@ -384,6 +421,143 @@ export default function AdminClient({
     }
   }
 
+  function openCustomFee(student: AnyRecord) {
+    setOpenActionsId(null);
+    setCustomFeeStudent(student);
+    setCustomFeeAmount("");
+    setCustomFeeCurrency(
+      String(student.currency || "AUD").toUpperCase()
+    );
+    setCustomFeeDescription("Custom Fee");
+    setCustomFeeLink("");
+  }
+
+  function closeCustomFee() {
+    if (customFeeBusy) return;
+
+    setCustomFeeStudent(null);
+    setCustomFeeAmount("");
+    setCustomFeeLink("");
+  }
+
+  async function createCustomFeeLink() {
+    if (!customFeeStudent?.id) return;
+
+    const amount = Number(customFeeAmount);
+    const selectedCurrency = String(
+      customFeeCurrency || ""
+    ).toUpperCase();
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Please enter a valid custom fee amount.");
+      return;
+    }
+
+    if (!CURRENCIES.includes(selectedCurrency)) {
+      showToast("Please select a supported currency.");
+      return;
+    }
+
+    setCustomFeeBusy(true);
+    setCustomFeeLink("");
+
+    try {
+      const response = await fetch(
+        "/api/admin/payment-links/custom",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            studentId: customFeeStudent.id,
+            month,
+            amount,
+            currency: selectedCurrency,
+            description:
+              customFeeDescription.trim() || "Custom Fee",
+          }),
+        }
+      );
+
+      const data = await readJson(response);
+
+      if (!response.ok || !data.paymentUrl) {
+        showToast(
+          data.error ||
+            "Could not create custom payment link."
+        );
+        return;
+      }
+
+      setCustomFeeLink(data.paymentUrl);
+      showToast(
+        "Custom payment link created successfully."
+      );
+    } catch {
+      showToast(
+        "Could not connect to the custom payment service."
+      );
+    } finally {
+      setCustomFeeBusy(false);
+    }
+  }
+
+  async function copyCustomFeeLink() {
+    if (!customFeeLink) return;
+
+    try {
+      await navigator.clipboard.writeText(
+        customFeeLink
+      );
+      showToast("Custom payment link copied.");
+    } catch {
+      showToast(
+        "Could not copy the custom payment link."
+      );
+    }
+  }
+
+  async function shareCustomFeeLink() {
+    if (!customFeeLink) return;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title:
+            `Global Punjabi Classes — ${
+              customFeeStudent?.student_name ||
+              "Custom Fee"
+            }`,
+          text:
+            `Payment link for ${
+              customFeeStudent?.student_name ||
+              "student"
+            } — ${customFeeCurrency} ${Number(
+              customFeeAmount || 0
+            ).toFixed(2)}`,
+          url: customFeeLink,
+        });
+
+        return;
+      }
+
+      await navigator.clipboard.writeText(
+        customFeeLink
+      );
+
+      showToast(
+        "Sharing is not available here. The payment link was copied instead."
+      );
+    } catch (error: any) {
+      if (error?.name === "AbortError") return;
+
+      showToast(
+        "Could not share the custom payment link."
+      );
+    }
+  }
+
   async function addStudent(keepOpen = false) {
     if (
       !studentForm.serial_number.trim() ||
@@ -531,12 +705,29 @@ export default function AdminClient({
   ]);
 
   const invoiceMap = useMemo(() => {
-    return new Map(
-      invoices.map((invoice) => [
-        invoice.student_id,
-        invoice,
-      ])
-    );
+    const map = new Map<string, AnyRecord>();
+
+    for (const invoice of invoices) {
+      const studentId = invoice.student_id;
+
+      if (!studentId) continue;
+
+      const current = map.get(studentId);
+
+      const isCustom = String(
+        invoice.invoice_number || ""
+      ).startsWith("GPC-CUSTOM-");
+
+      const currentIsCustom = String(
+        current?.invoice_number || ""
+      ).startsWith("GPC-CUSTOM-");
+
+      if (!current || (currentIsCustom && !isCustom)) {
+        map.set(studentId, invoice);
+      }
+    }
+
+    return map;
   }, [invoices]);
 
   const visibleRows = useMemo(() => {
@@ -1084,6 +1275,155 @@ export default function AdminClient({
           "30px 20px 80px",
       }}
     >
+      <style>{`
+        .studentActionPanel {
+          animation: gpcActionPanelIn .18s cubic-bezier(.2,.8,.2,1);
+          transform-origin: top right;
+        }
+
+        .studentActionItem {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 10px 10px;
+          margin: 2px 0;
+          border: 0;
+          border-radius: 13px;
+          background: transparent;
+          color: #17243a;
+          text-align: left;
+          cursor: pointer;
+          font: inherit;
+          transition:
+            background .18s ease,
+            transform .18s ease,
+            box-shadow .18s ease;
+        }
+
+        .studentActionItem:hover:not(:disabled) {
+          background: #f4f7fb;
+          transform: translateX(2px);
+        }
+
+        .studentActionItem:disabled {
+          opacity: .52;
+          cursor: not-allowed;
+        }
+
+        .studentActionItem b {
+          display: block;
+          font-size: 12px;
+          line-height: 1.25;
+          font-weight: 850;
+          color: #102b57;
+        }
+
+        .studentActionItem small {
+          display: block;
+          margin-top: 3px;
+          color: #78879d;
+          font-size: 10px;
+          line-height: 1.25;
+        }
+
+        .studentActionIcon {
+          width: 34px;
+          height: 34px;
+          flex: 0 0 34px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: #eef3fa;
+          color: #0b2a5b;
+          font-size: 15px;
+          font-weight: 900;
+        }
+
+        .studentActionItemPrimary .studentActionIcon {
+          background: #eaf2ff;
+          color: #0b2a5b;
+        }
+
+        .studentActionItemDanger:hover:not(:disabled) {
+          background: #fff3f1;
+        }
+
+        .studentActionItemDanger .studentActionIcon {
+          background: #fff0ef;
+          color: #b42318;
+        }
+
+        .studentActionItemVerify {
+          background: #fffaf0;
+        }
+
+        .studentActionItemVerify .studentActionIcon {
+          background: #fff1cc;
+          color: #8a5d00;
+        }
+
+        .customFeeModalField {
+          min-width: 0;
+        }
+
+        .customFeeModalField label {
+          display: block;
+          margin-bottom: 7px;
+          color: #263750;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .customFeeModalField input,
+        .customFeeModalField select {
+          width: 100%;
+          min-height: 48px;
+          box-sizing: border-box;
+          padding: 12px 14px;
+          border: 1px solid #dbe3ee;
+          border-radius: 11px;
+          background: #fff;
+          color: #12203a;
+          font-size: 14px;
+          outline: none;
+          transition:
+            border-color .18s ease,
+            box-shadow .18s ease;
+        }
+
+        .customFeeModalField input:focus,
+        .customFeeModalField select:focus {
+          border-color: #b98510;
+          box-shadow: 0 0 0 3px rgba(185,133,16,.10);
+        }
+
+        @keyframes gpcActionPanelIn {
+          from {
+            opacity: 0;
+            transform: translateY(-5px) scale(.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @media (max-width: 700px) {
+          .studentActionPanel {
+            position: fixed !important;
+            right: 12px !important;
+            left: 12px !important;
+            top: auto !important;
+            bottom: 12px !important;
+            width: auto !important;
+            max-height: min(72vh, 560px);
+            overflow-y: auto;
+            transform-origin: bottom center;
+          }
+        }
+      `}</style>
+
       <div className="adminHeader">
         <div>
           <div className="eyebrow">
@@ -1546,96 +1886,280 @@ export default function AdminClient({
                     </td>
 
                     <td>
-                      <div className="actionStack">
+                      <div
+                        className="studentActionMenu"
+                        data-student-actions
+                        style={{
+                          position: "relative",
+                          display: "flex",
+                          justifyContent: "flex-end",
+                        }}
+                      >
                         <button
+                          type="button"
                           className="btn btnPrimary btnSmall"
-                          disabled={
-                            sending ===
-                              student.id ||
-                            !student.active
+                          onClick={(event) => {
+                            event.stopPropagation();
+
+                            setOpenActionsId((current) =>
+                              current === student.id
+                                ? null
+                                : student.id
+                            );
+                          }}
+                          aria-expanded={
+                            openActionsId === student.id
                           }
-                          onClick={() =>
-                            sendLink(
-                              student.id
-                            )
-                          }
+                          aria-haspopup="menu"
                         >
-                          {sending ===
-                          student.id
-                            ? "Sending…"
-                            : student.active
-                              ? "Send Link"
-                              : "Inactive"}
+                          {sending === student.id
+                            ? "Working…"
+                            : "••• Actions"}
                         </button>
 
-                        {invoice && (
-                          <>
-                            <button
-                              className="btn btnGhost btnSmall"
-                              onClick={() =>
-                                copyFeeLink(invoice)
-                              }
-                            >
-                              Copy Payment Link
-                            </button>
-
-                            <button
-                              className="btn btnGhost btnSmall"
-                              onClick={() =>
-                                setProcessView(
-                                  {
-                                    invoice,
-                                    student,
-                                  }
-                                )
-                              }
-                            >
-                              View Process
-                            </button>
-                          </>
-                        )}
-
-                        <button
-                          className="btn btnGhost btnSmall"
-                          onClick={() =>
-                            openEditStudent(student)
-                          }
-                          disabled={
-                            deletingStudent ===
-                            student.id
-                          }
-                        >
-                          Edit Student
-                        </button>
-
-                        <button
-                          className="btn btnGhost btnSmall"
-                          onClick={() =>
-                            deleteStudent(student)
-                          }
-                          disabled={
-                            deletingStudent ===
-                            student.id
-                          }
-                        >
-                          {deletingStudent ===
-                          student.id
-                            ? "Deleting…"
-                            : "Delete Student"}
-                        </button>
-
-                        {invoice?.status ===
-                          "VERIFYING" && (
-                          <button
-                            className="btn btnPrimary btnSmall"
-                            onClick={() =>
-                              approveInvoice(
-                                invoice.id
-                              )
+                        {openActionsId === student.id && (
+                          <div
+                            className="studentActionPanel"
+                            role="menu"
+                            onClick={(event) =>
+                              event.stopPropagation()
                             }
+                            style={{
+                              position: "absolute",
+                              right: 0,
+                              top: "calc(100% + 8px)",
+                              zIndex: 80,
+                              width: 260,
+                              padding: 8,
+                              border:
+                                "1px solid rgba(214,223,235,.95)",
+                              borderRadius: 18,
+                              background:
+                                "rgba(255,255,255,.98)",
+                              boxShadow:
+                                "0 24px 60px rgba(11,42,91,.18), 0 8px 24px rgba(11,42,91,.08)",
+                              backdropFilter: "blur(18px)",
+                            }}
                           >
-                            Verify
-                          </button>
+                            <div
+                              style={{
+                                padding: "8px 10px 6px",
+                                fontSize: 10,
+                                fontWeight: 900,
+                                letterSpacing: ".14em",
+                                color: "#8a6516",
+                              }}
+                            >
+                              PAYMENT
+                            </div>
+
+                            <button
+                              type="button"
+                              className="studentActionItem studentActionItemPrimary"
+                              disabled={
+                                sending === student.id ||
+                                !student.active
+                              }
+                              onClick={() => {
+                                setOpenActionsId(null);
+
+                                if (student.active) {
+                                  void sendLink(student.id);
+                                }
+                              }}
+                            >
+                              <span className="studentActionIcon">
+                                ↗
+                              </span>
+
+                              <span>
+                                <b>
+                                  {sending === student.id
+                                    ? "Sending…"
+                                    : student.active
+                                      ? "Send Payment Link"
+                                      : "Student Inactive"}
+                                </b>
+                                <small>
+                                  Send the normal monthly fee link
+                                </small>
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="studentActionItem"
+                              onClick={() =>
+                                openCustomFee(student)
+                              }
+                            >
+                              <span className="studentActionIcon">
+                                ＋
+                              </span>
+
+                              <span>
+                                <b>Custom Fee</b>
+                                <small>
+                                  Create a one-time amount
+                                </small>
+                              </span>
+                            </button>
+
+                            {invoice && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="studentActionItem"
+                                  onClick={() => {
+                                    setOpenActionsId(null);
+                                    void copyFeeLink(
+                                      invoice
+                                    );
+                                  }}
+                                >
+                                  <span className="studentActionIcon">
+                                    ⧉
+                                  </span>
+
+                                  <span>
+                                    <b>
+                                      Copy Payment Link
+                                    </b>
+                                    <small>
+                                      Copy the current invoice link
+                                    </small>
+                                  </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="studentActionItem"
+                                  onClick={() => {
+                                    setOpenActionsId(null);
+
+                                    setProcessView({
+                                      invoice,
+                                      student,
+                                    });
+                                  }}
+                                >
+                                  <span className="studentActionIcon">
+                                    ◎
+                                  </span>
+
+                                  <span>
+                                    <b>
+                                      View Payment Process
+                                    </b>
+                                    <small>
+                                      See payment and verification status
+                                    </small>
+                                  </span>
+                                </button>
+                              </>
+                            )}
+
+                            <div
+                              style={{
+                                height: 1,
+                                margin: "7px 4px",
+                                background: "#edf1f6",
+                              }}
+                            />
+
+                            <div
+                              style={{
+                                padding: "5px 10px 6px",
+                                fontSize: 10,
+                                fontWeight: 900,
+                                letterSpacing: ".14em",
+                                color: "#8a6516",
+                              }}
+                            >
+                              STUDENT
+                            </div>
+
+                            <button
+                              type="button"
+                              className="studentActionItem"
+                              onClick={() => {
+                                setOpenActionsId(null);
+                                openEditStudent(student);
+                              }}
+                              disabled={
+                                deletingStudent ===
+                                student.id
+                              }
+                            >
+                              <span className="studentActionIcon">
+                                ✎
+                              </span>
+
+                              <span>
+                                <b>Edit Student</b>
+                                <small>
+                                  Update student information
+                                </small>
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="studentActionItem studentActionItemDanger"
+                              onClick={() => {
+                                setOpenActionsId(null);
+                                void deleteStudent(student);
+                              }}
+                              disabled={
+                                deletingStudent ===
+                                student.id
+                              }
+                            >
+                              <span className="studentActionIcon">
+                                ×
+                              </span>
+
+                              <span>
+                                <b>
+                                  {deletingStudent ===
+                                  student.id
+                                    ? "Deleting…"
+                                    : "Delete Student"}
+                                </b>
+                                <small>
+                                  Remove this student and records
+                                </small>
+                              </span>
+                            </button>
+
+                            {invoice?.status ===
+                              "VERIFYING" && (
+                              <button
+                                type="button"
+                                className="studentActionItem studentActionItemVerify"
+                                onClick={() => {
+                                  setOpenActionsId(null);
+
+                                  void approveInvoice(
+                                    invoice.id
+                                  );
+                                }}
+                              >
+                                <span className="studentActionIcon">
+                                  ✓
+                                </span>
+
+                                <span>
+                                  <b>
+                                    Verify Payment
+                                  </b>
+                                  <small>
+                                    Approve this submitted payment
+                                  </small>
+                                </span>
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -2380,6 +2904,278 @@ export default function AdminClient({
                       : "Add Student"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customFeeStudent && (
+        <div className="modalBackdrop">
+          <div
+            className="modal card"
+            style={{
+              width: "min(560px, 100%)",
+              padding: 0,
+              overflow: "hidden",
+              borderRadius: 24,
+            }}
+          >
+            <div
+              style={{
+                padding: "26px 28px 20px",
+                borderBottom: "1px solid #e8edf5",
+                background:
+                  "linear-gradient(180deg,#fff,#fbfcff)",
+              }}
+            >
+              <div className="eyebrow">
+                CUSTOM PAYMENT
+              </div>
+
+              <h2
+                style={{
+                  margin: "6px 0 5px",
+                }}
+              >
+                Create a Custom Fee
+              </h2>
+
+              <p
+                style={{
+                  margin: 0,
+                  color: "#64748b",
+                  fontSize: 13,
+                }}
+              >
+                Create a one-time payment request for{" "}
+                {customFeeStudent.student_name}. This does
+                not change the student’s regular monthly fee.
+              </p>
+            </div>
+
+            <div style={{ padding: 24 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "1fr 150px",
+                  gap: 14,
+                }}
+              >
+                <div className="customFeeModalField">
+                  <label>
+                    Custom Amount{" "}
+                    <span className="required">
+                      *
+                    </span>
+                  </label>
+
+                  <input
+                    autoFocus
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="e.g. 200"
+                    value={customFeeAmount}
+                    onChange={(event) =>
+                      setCustomFeeAmount(
+                        event.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div className="customFeeModalField">
+                  <label>
+                    Currency{" "}
+                    <span className="required">
+                      *
+                    </span>
+                  </label>
+
+                  <select
+                    value={customFeeCurrency}
+                    onChange={(event) =>
+                      setCustomFeeCurrency(
+                        event.target.value
+                      )
+                    }
+                  >
+                    {CURRENCIES.map((item) => (
+                      <option
+                        key={item}
+                        value={item}
+                      >
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div
+                className="customFeeModalField"
+                style={{ marginTop: 14 }}
+              >
+                <label>Description</label>
+
+                <input
+                  placeholder="e.g. Custom Fee, Extra Class, Balance Fee"
+                  value={customFeeDescription}
+                  onChange={(event) =>
+                    setCustomFeeDescription(
+                      event.target.value
+                    )
+                  }
+                />
+              </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  background: "#f7f9fc",
+                  border:
+                    "1px solid #e5ebf3",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent:
+                    "space-between",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#718096",
+                    }}
+                  >
+                    PAYMENT REQUEST
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 22,
+                      fontWeight: 900,
+                      color: "#0b2a5b",
+                    }}
+                  >
+                    {customFeeCurrency}{" "}
+                    {Number(
+                      customFeeAmount || 0
+                    ).toFixed(2)}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#64748b",
+                    textAlign: "right",
+                  }}
+                >
+                  Student
+                  <br />
+                  <b
+                    style={{
+                      color: "#17243a",
+                    }}
+                  >
+                    {customFeeStudent.student_name}
+                  </b>
+                </div>
+              </div>
+
+              {customFeeLink && (
+                <div style={{ marginTop: 16 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: 7,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#263750",
+                    }}
+                  >
+                    Secure Payment Link
+                  </label>
+
+                  <input
+                    readOnly
+                    value={customFeeLink}
+                    onFocus={(event) =>
+                      event.currentTarget.select()
+                    }
+                  />
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "1fr 1fr",
+                      gap: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btnGhost"
+                      onClick={
+                        copyCustomFeeLink
+                      }
+                    >
+                      Copy Link
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btnPrimary"
+                      onClick={
+                        shareCustomFeeLink
+                      }
+                    >
+                      Share Link
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div
+              className="modalActions"
+              style={{
+                padding: "16px 24px 22px",
+                borderTop:
+                  "1px solid #e8edf5",
+              }}
+            >
+              <button
+                type="button"
+                className="btn btnGhost"
+                onClick={closeCustomFee}
+                disabled={customFeeBusy}
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                className="btn btnGold"
+                onClick={
+                  createCustomFeeLink
+                }
+                disabled={customFeeBusy}
+              >
+                {customFeeBusy
+                  ? "Creating…"
+                  : customFeeLink
+                    ? "Create New Link"
+                    : "Create Payment Link"}
+              </button>
             </div>
           </div>
         </div>
