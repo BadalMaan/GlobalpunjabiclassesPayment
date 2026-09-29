@@ -2219,3 +2219,665 @@ textarea:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+
+/* =========================================================
+   STUDENT DIRECTORY — ACTIVE / INACTIVE EXPERIENCE
+   Global Punjabi Classes
+   ========================================================= */
+
+/* Smooth anchor positioning */
+#student-directory,
+#active-students,
+#inactive-students {
+  scroll-margin-top: 95px;
+}
+
+
+/* =========================================================
+   CLICKABLE DASHBOARD STATS
+   ========================================================= */
+
+.statInteractive {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+
+  transition:
+    transform .42s var(--ease-out),
+    box-shadow .42s var(--ease-out),
+    border-color .3s ease,
+    background .35s ease;
+}
+
+.statInteractive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.72),
+      transparent 42%
+    );
+
+  opacity: .8;
+}
+
+.statInteractive::after {
+  content: "";
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  right: -65px;
+  bottom: -75px;
+
+  border-radius: 50%;
+
+  border: 1px solid rgba(18,61,120,.08);
+
+  box-shadow:
+    0 0 0 18px rgba(18,61,120,.018),
+    0 0 0 36px rgba(18,61,120,.012);
+
+  pointer-events: none;
+
+  transition:
+    transform .55s var(--ease-out),
+    border-color .3s ease;
+}
+
+.statInteractive:hover {
+  transform: translateY(-5px);
+
+  border-color: #c7d6e5;
+
+  box-shadow:
+    0 18px 38px rgba(10,35,70,.11),
+    0 1px 0 rgba(255,255,255,.95) inset;
+}
+
+.statInteractive:hover::after {
+  transform: scale(1.12);
+}
+
+.statInteractive:active {
+  transform: translateY(-1px) scale(.99);
+}
+
+.statInteractive:focus-visible {
+  outline: none;
+
+  border-color: #7896b8;
+
+  box-shadow:
+    0 0 0 4px rgba(35,82,139,.10),
+    0 16px 35px rgba(10,35,70,.10);
+}
+
+
+/* Number / label remain above decoration */
+
+.statInteractive .n,
+.statInteractive .l {
+  position: relative;
+  z-index: 2;
+}
+
+
+/* Small navigation hint */
+
+.statJumpHint {
+  position: relative;
+  z-index: 2;
+
+  display: inline-flex;
+  align-items: center;
+
+  margin-top: 9px;
+
+  color: #7890aa;
+
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .02em;
+
+  opacity: 0;
+  transform: translateY(5px);
+
+  transition:
+    opacity .3s ease,
+    transform .35s var(--ease-out),
+    color .25s ease;
+}
+
+.statInteractive:hover .statJumpHint,
+.statInteractive:focus-visible .statJumpHint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.statInteractive:hover .statJumpHint {
+  color: var(--navy);
+}
+
+
+/* =========================================================
+   ACTIVE STAT
+   ========================================================= */
+
+.statInteractiveActive {
+  border-color: #d7e9df;
+}
+
+.statInteractiveActive::before {
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(22,128,83,.075),
+      transparent 45%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.72),
+      transparent 42%
+    );
+}
+
+.statInteractiveActive:hover {
+  border-color: #bcdcc9;
+
+  box-shadow:
+    0 18px 38px rgba(22,128,83,.10),
+    0 1px 0 rgba(255,255,255,.95) inset;
+}
+
+.statInteractiveActive .n {
+  color: #176b49;
+}
+
+.statInteractiveActive .statJumpHint {
+  color: #438766;
+}
+
+
+/* =========================================================
+   INACTIVE STAT
+   ========================================================= */
+
+.statInteractiveInactive {
+  border-color: #e8dede;
+}
+
+.statInteractiveInactive::before {
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(180,35,24,.055),
+      transparent 45%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.72),
+      transparent 42%
+    );
+}
+
+.statInteractiveInactive:hover {
+  border-color: #e2c8c5;
+
+  box-shadow:
+    0 18px 38px rgba(180,35,24,.075),
+    0 1px 0 rgba(255,255,255,.95) inset;
+}
+
+.statInteractiveInactive .n {
+  color: #9f352d;
+}
+
+.statInteractiveInactive .statJumpHint {
+  color: #a65c56;
+}
+
+
+/* =========================================================
+   STUDENT STATUS SECTIONS
+   ========================================================= */
+
+.studentStatusSection {
+  position: relative;
+  margin-top: 18px;
+  padding: 23px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255,255,255,.98),
+      rgba(252,253,255,.98)
+    );
+
+  border: 1px solid var(--line);
+  border-radius: 22px;
+
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.95) inset,
+    var(--shadow-sm);
+
+  overflow: visible;
+
+  transition:
+    box-shadow .45s var(--ease-out),
+    border-color .35s ease;
+}
+
+.studentStatusSection:hover {
+  border-color: #d5e0eb;
+
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.95) inset,
+    var(--shadow-md);
+}
+
+
+/* Subtle top accent */
+
+.studentStatusSection::before {
+  content: "";
+  position: absolute;
+
+  top: 0;
+  left: 23px;
+  right: 23px;
+
+  height: 2px;
+
+  border-radius: 0 0 999px 999px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(22,128,83,.45),
+      transparent
+    );
+
+  opacity: .8;
+}
+
+.studentStatusSectionInactive::before {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(180,35,24,.32),
+      transparent
+    );
+}
+
+
+/* =========================================================
+   SECTION HEADER
+   ========================================================= */
+
+.studentStatusSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 18px;
+
+  margin-bottom: 18px;
+
+  flex-wrap: wrap;
+}
+
+.studentStatusSectionHeader h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  margin: 5px 0 5px;
+
+  color: var(--navy);
+
+  font-size: 20px;
+  font-weight: 950;
+
+  letter-spacing: -.55px;
+}
+
+.studentStatusSectionHeader p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+
+/* =========================================================
+   SECTION COUNT BADGES
+   ========================================================= */
+
+.studentSectionCount {
+  min-width: 28px;
+  height: 25px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0 8px;
+
+  border-radius: 999px;
+
+  color: var(--green);
+  background: var(--green-bg);
+
+  border: 1px solid #c8ecd9;
+
+  font-size: 10px;
+  font-weight: 950;
+
+  font-variant-numeric: tabular-nums;
+}
+
+.studentSectionCountMuted {
+  color: var(--red);
+
+  background: var(--red-bg);
+
+  border-color: #f0cfcc;
+}
+
+
+/* =========================================================
+   SECTION NAVIGATION BUTTON
+   ========================================================= */
+
+.sectionJumpButton {
+  min-height: 38px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 8px 12px;
+
+  color: var(--navy);
+
+  background:
+    linear-gradient(
+      145deg,
+      #ffffff,
+      #f6f9fc
+    );
+
+  border: 1px solid var(--line);
+
+  border-radius: 10px;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.9) inset;
+
+  transition:
+    transform .35s var(--ease-out),
+    border-color .25s ease,
+    box-shadow .35s var(--ease-out),
+    color .25s ease,
+    background .25s ease;
+}
+
+.sectionJumpButton:hover {
+  transform: translateY(-2px);
+
+  color: var(--gold);
+
+  background: #fff;
+
+  border-color: #c8d5e3;
+
+  box-shadow:
+    0 8px 20px rgba(10,35,70,.07);
+}
+
+.sectionJumpButton:active {
+  transform: translateY(0) scale(.98);
+}
+
+.sectionJumpButton:focus-visible {
+  outline: none;
+
+  box-shadow:
+    0 0 0 4px rgba(35,82,139,.09),
+    0 8px 20px rgba(10,35,70,.07);
+}
+
+
+/* =========================================================
+   ACTIVE SECTION
+   ========================================================= */
+
+.studentStatusSectionActive {
+  border-color: #d9eade;
+}
+
+.studentStatusSectionActive .studentStatusSectionHeader h3 {
+  color: #176b49;
+}
+
+
+/* =========================================================
+   INACTIVE SECTION
+   ========================================================= */
+
+.studentStatusSectionInactive {
+  border-color: #eadfdd;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255,255,255,.98),
+      rgba(255,252,252,.98)
+    );
+}
+
+.studentStatusSectionInactive .studentStatusSectionHeader h3 {
+  color: #8f3932;
+}
+
+
+/* =========================================================
+   STUDENT TABLE INSIDE STATUS SECTION
+   ========================================================= */
+
+.studentStatusSection .tableWrap {
+  margin-top: 2px;
+
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.9) inset,
+    0 4px 18px rgba(10,35,70,.035);
+}
+
+.studentStatusSection .table tbody tr {
+  animation: studentRowIn .42s var(--ease-out) both;
+}
+
+@keyframes studentRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* =========================================================
+   EMPTY STUDENT STATE
+   ========================================================= */
+
+.studentStatusSection .tableWrap > div:last-child {
+  min-height: 90px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 25px;
+
+  color: var(--muted);
+
+  font-size: 12px;
+  font-weight: 700;
+
+  text-align: center;
+}
+
+
+/* =========================================================
+   ACTION MENU — PREMIUM
+   ========================================================= */
+
+.studentActionPanel {
+  position: absolute !important;
+
+  top: calc(100% + 8px) !important;
+  right: 0 !important;
+
+  z-index: 80;
+
+  width: 230px;
+
+  padding: 7px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255,255,255,.99),
+      rgba(249,251,254,.99)
+    );
+
+  border: 1px solid #d8e2ed;
+
+  border-radius: 15px;
+
+  box-shadow:
+    0 20px 45px rgba(10,35,70,.14),
+    0 4px 12px rgba(10,35,70,.06),
+    inset 0 1px 0 rgba(255,255,255,.95);
+
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+
+  animation: actionMenuIn .28s var(--ease-out) both;
+  transform-origin: top right;
+}
+
+@keyframes actionMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+  .studentStatusSection {
+    padding: 19px;
+  }
+
+  .studentStatusSection::before {
+    left: 19px;
+    right: 19px;
+  }
+
+  .studentStatusSectionHeader {
+    align-items: flex-start;
+  }
+
+  .statJumpHint {
+    opacity: 1;
+    transform: none;
+  }
+
+}
+
+
+@media (max-width: 650px) {
+
+  .studentStatusSection {
+    margin-top: 14px;
+    padding: 15px;
+
+    border-radius: 17px;
+  }
+
+  .studentStatusSection::before {
+    left: 15px;
+    right: 15px;
+  }
+
+  .studentStatusSectionHeader {
+    display: block;
+  }
+
+  .studentStatusSectionHeader h3 {
+    font-size: 17px;
+  }
+
+  .studentStatusSectionHeader p {
+    max-width: 100%;
+  }
+
+  .sectionJumpButton {
+    width: 100%;
+    margin-top: 13px;
+  }
+
+  .statInteractive {
+    min-height: 105px;
+  }
+
+  .statJumpHint {
+    font-size: 8px;
+  }
+
+  .studentSectionCount {
+    min-width: 25px;
+    height: 23px;
+  }
+
+  .studentActionPanel {
+    position: fixed !important;
+
+    top: auto !important;
+    right: 12px !important;
+    bottom: 12px !important;
+
+    width: min(300px, calc(100vw - 24px));
+  }
+
+}
