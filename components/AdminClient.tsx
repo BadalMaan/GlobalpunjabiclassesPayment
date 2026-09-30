@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type AnyRecord = Record<string, any>;
 
@@ -134,6 +135,7 @@ export default function AdminClient({
 
   const [openActionsId, setOpenActionsId] =
     useState<string | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState({ top: 0, right: 18 });
 
   const [customFeeStudent, setCustomFeeStudent] =
     useState<AnyRecord | null>(null);
@@ -200,8 +202,17 @@ export default function AdminClient({
 
     document.addEventListener("click", handleDocumentClick);
 
+    function closeActionMenuOnViewportChange() {
+      setOpenActionsId(null);
+    }
+
+    window.addEventListener("scroll", closeActionMenuOnViewportChange, true);
+    window.addEventListener("resize", closeActionMenuOnViewportChange);
+
     return () => {
       document.removeEventListener("click", handleDocumentClick);
+      window.removeEventListener("scroll", closeActionMenuOnViewportChange, true);
+      window.removeEventListener("resize", closeActionMenuOnViewportChange);
     };
   }, []);
 
@@ -1438,11 +1449,25 @@ export default function AdminClient({
                           onClick={(event) => {
                             event.stopPropagation();
 
-                            setOpenActionsId((current) =>
-                              current === student.id
-                                ? null
-                                : student.id
-                            );
+                            if (openActionsId === student.id) {
+                              setOpenActionsId(null);
+                              return;
+                            }
+
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const menuHeight = Math.min(520, window.innerHeight - 32);
+                            const gap = 8;
+                            const below = rect.bottom + gap;
+                            const top =
+                              below + menuHeight <= window.innerHeight - 12
+                                ? below
+                                : Math.max(12, rect.top - menuHeight - gap);
+
+                            setActionMenuPosition({
+                              top,
+                              right: Math.max(12, window.innerWidth - rect.right),
+                            });
+                            setOpenActionsId(student.id);
                           }}
                           aria-expanded={
                             openActionsId === student.id
@@ -1454,18 +1479,20 @@ export default function AdminClient({
                             : "••• Actions"}
                         </button>
 
-                        {openActionsId === student.id && (
-                          <div
-                            className="studentActionPanel"
+                        {openActionsId === student.id &&
+                          typeof document !== "undefined" &&
+                          createPortal(
+                            <div
+                              className="studentActionPanel"
                             role="menu"
                             onClick={(event) =>
                               event.stopPropagation()
                             }
                             style={{
-                              position: "absolute",
-                              right: 0,
-                              top: "calc(100% + 8px)",
-                              zIndex: 80,
+                              position: "fixed",
+                              top: actionMenuPosition.top,
+                              right: actionMenuPosition.right,
+                              zIndex: 2147483647,
                               width: 260,
                               padding: 8,
                               border:
@@ -1696,8 +1723,9 @@ export default function AdminClient({
                                 </span>
                               </button>
                             )}
-                          </div>
-                        )}
+                            </div>,
+                            document.body
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -1920,199 +1948,6 @@ export default function AdminClient({
             max-height: min(72vh, 560px);
             overflow-y: auto;
             transform-origin: bottom center;
-          }
-        }
-        /* Safe responsive admin/mobile layer */
-        .studentActionPanel {
-          position: fixed !important;
-          right: 18px !important;
-          top: 96px !important;
-          bottom: auto !important;
-          z-index: 99999 !important;
-          width: 280px !important;
-          max-width: calc(100vw - 24px) !important;
-          max-height: calc(100vh - 112px) !important;
-          overflow-y: auto !important;
-        }
-
-        @media (max-width: 700px) {
-          .adminDashboard {
-            width: 100% !important;
-            max-width: 100% !important;
-            padding: 12px 8px 50px !important;
-            box-sizing: border-box !important;
-          }
-
-          .adminDashboard .adminHeader h1 {
-            font-size: 21px !important;
-            line-height: 1.15 !important;
-          }
-
-          .adminDashboard .headerActions {
-            width: 100% !important;
-            display: grid !important;
-            grid-template-columns: 1fr 1fr !important;
-            gap: 8px !important;
-          }
-
-          .adminDashboard .headerActions .btn {
-            width: 100% !important;
-            min-width: 0 !important;
-          }
-
-          .adminDashboard .statsGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            gap: 8px !important;
-          }
-
-          .adminDashboard .stat {
-            min-width: 0 !important;
-            padding: 12px 9px !important;
-          }
-
-          .adminDashboard .grid3 {
-            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-            gap: 7px !important;
-          }
-
-          .adminDashboard .dashboardSection,
-          .adminDashboard .studentStatusSection {
-            width: 100% !important;
-            max-width: 100% !important;
-            box-sizing: border-box !important;
-            padding: 11px !important;
-            border-radius: 15px !important;
-          }
-
-          .adminDashboard .sectionHeading,
-          .adminDashboard .studentStatusSectionHeader {
-            display: block !important;
-          }
-
-          .adminDashboard .sectionHeading > div:last-child {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr !important;
-            gap: 8px !important;
-            width: 100% !important;
-            margin-top: 10px !important;
-          }
-
-          .adminDashboard .sectionHeading > div:last-child .btn {
-            width: 100% !important;
-            min-width: 0 !important;
-          }
-
-          .adminDashboard .filterGrid {
-            grid-template-columns: 1fr !important;
-            gap: 8px !important;
-          }
-
-          .adminDashboard .filterGrid input,
-          .adminDashboard .filterGrid select {
-            width: 100% !important;
-            min-width: 0 !important;
-            min-height: 46px !important;
-            box-sizing: border-box !important;
-          }
-
-          /* Convert the wide desktop table into compact mobile cards. */
-          .adminDashboard .tableWrap {
-            width: 100% !important;
-            overflow-x: hidden !important;
-            border: 0 !important;
-            background: transparent !important;
-            box-shadow: none !important;
-          }
-
-          .adminDashboard .table {
-            display: block !important;
-            width: 100% !important;
-            min-width: 0 !important;
-          }
-
-          .adminDashboard .table thead {
-            display: none !important;
-          }
-
-          .adminDashboard .table tbody {
-            display: grid !important;
-            gap: 10px !important;
-          }
-
-          .adminDashboard .table tbody tr {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr !important;
-            padding: 4px !important;
-            border: 1px solid #e4eaf2 !important;
-            border-radius: 15px !important;
-            background: #fff !important;
-            box-shadow: 0 7px 20px rgba(11,42,91,.055) !important;
-            overflow: visible !important;
-          }
-
-          .adminDashboard .table td {
-            min-width: 0 !important;
-            white-space: normal !important;
-            overflow-wrap: anywhere !important;
-            padding: 9px !important;
-            border-bottom: 1px solid #edf1f6 !important;
-            font-size: 11px !important;
-            line-height: 1.35 !important;
-            box-sizing: border-box !important;
-          }
-
-          .adminDashboard .table td::before {
-            display: block !important;
-            margin-bottom: 3px !important;
-            color: #8a97aa !important;
-            font-size: 8px !important;
-            font-weight: 900 !important;
-            letter-spacing: .08em !important;
-            text-transform: uppercase !important;
-          }
-
-          .adminDashboard .table td:nth-child(1)::before { content: "S.NO"; }
-          .adminDashboard .table td:nth-child(2)::before { content: "STUDENT"; }
-          .adminDashboard .table td:nth-child(3)::before { content: "AGE"; }
-          .adminDashboard .table td:nth-child(4)::before { content: "COUNTRY"; }
-          .adminDashboard .table td:nth-child(5)::before { content: "DAYS"; }
-          .adminDashboard .table td:nth-child(6)::before { content: "TEACHER"; }
-          .adminDashboard .table td:nth-child(7)::before { content: "GROUPS"; }
-          .adminDashboard .table td:nth-child(8)::before { content: "CURRENCY"; }
-          .adminDashboard .table td:nth-child(9)::before { content: "FEE"; }
-          .adminDashboard .table td:nth-child(10)::before { content: "PAYMENT"; }
-          .adminDashboard .table td:nth-child(11)::before { content: "ACTION"; }
-
-          .adminDashboard .table td:nth-child(2),
-          .adminDashboard .table td:nth-child(7),
-          .adminDashboard .table td:nth-child(10),
-          .adminDashboard .table td:nth-child(11) {
-            grid-column: 1 / -1 !important;
-          }
-
-          .adminDashboard .table td:last-child {
-            border-bottom: 0 !important;
-          }
-
-          .adminDashboard .studentActionMenu,
-          .adminDashboard .studentActionMenu > .btn {
-            width: 100% !important;
-          }
-
-          .adminDashboard .studentActionMenu > .btn {
-            min-height: 44px !important;
-          }
-
-          /* Mobile Actions becomes a bottom sheet. */
-          .studentActionPanel {
-            left: 12px !important;
-            right: 12px !important;
-            top: auto !important;
-            bottom: 12px !important;
-            width: auto !important;
-            max-width: none !important;
-            max-height: min(78vh, 620px) !important;
-            border-radius: 22px !important;
           }
         }
       `}</style>
