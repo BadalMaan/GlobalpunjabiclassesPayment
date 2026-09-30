@@ -190,6 +190,18 @@ export default function AdminClient({
   }
 
   useEffect(() => {
+    const mobile = window.matchMedia("(max-width: 700px)").matches;
+    if (!mobile || !openActionsId) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [openActionsId]);
+
+  useEffect(() => {
     function handleDocumentClick(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
 
@@ -1318,13 +1330,13 @@ export default function AdminClient({
                   <tr
                     key={student.id}
                   >
-                    <td>
+                    <td data-label="S.No">
                       {
                         student.serial_number
                       }
                     </td>
 
-                    <td>
+                    <td data-label="Student">
                       <b>
                         {
                           student.student_name
@@ -1341,26 +1353,26 @@ export default function AdminClient({
                       </small>
                     </td>
 
-                    <td>
+                    <td data-label="Age">
                       {student.age ||
                         "—"}
                     </td>
 
-                    <td>
+                    <td data-label="Country">
                       {student.country}
                     </td>
 
-                    <td>
+                    <td data-label="Days">
                       {student.days ||
                         "—"}
                     </td>
 
-                    <td>
+                    <td data-label="Teacher">
                       {student.teacher_name ||
                         "—"}
                     </td>
 
-                    <td>
+                    <td data-label="Groups">
                       {(
                         Array.isArray(
                           student.groups
@@ -1371,20 +1383,20 @@ export default function AdminClient({
                         "—"}
                     </td>
 
-                    <td>
+                    <td data-label="Currency">
                       {
                         invoice?.currency ||
                         student.currency
                       }
                     </td>
 
-                    <td>
+                    <td data-label="Fee">
                       {invoice
                         ? `${invoice.currency} ${invoice.amount}`
                         : `${student.currency} ${student.monthly_fee}`}
                     </td>
 
-                    <td>
+                    <td data-label="Payment">
                       {invoice ? (
                         <>
                           <span
@@ -1422,7 +1434,7 @@ export default function AdminClient({
                       )}
                     </td>
 
-                    <td>
+                    <td data-label="Action">
                       <div
                         className="studentActionMenu"
                         data-student-actions
@@ -1910,16 +1922,278 @@ export default function AdminClient({
         }
 
         @media (max-width: 700px) {
+          .adminDashboard {
+            width: 100% !important;
+            max-width: none !important;
+            box-sizing: border-box !important;
+            padding: 14px 10px 72px !important;
+          }
+
+          .adminDashboard .adminHeader {
+            display: grid !important;
+            gap: 12px !important;
+            margin-bottom: 14px !important;
+          }
+
+          .adminDashboard .adminHeader h1 {
+            font-size: 24px !important;
+            line-height: 1.12 !important;
+          }
+
+          .adminDashboard .adminHeader p {
+            font-size: 12px !important;
+            line-height: 1.45 !important;
+          }
+
+          .adminDashboard .headerActions {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            width: 100% !important;
+            gap: 8px !important;
+          }
+
+          .adminDashboard .headerActions .btn {
+            width: 100% !important;
+            min-width: 0 !important;
+            padding: 10px 8px !important;
+            font-size: 12px !important;
+          }
+
+          .adminDashboard .statsGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+
+          .adminDashboard .statsGrid .stat:last-child {
+            grid-column: 1 / -1 !important;
+          }
+
+          .adminDashboard .stat {
+            min-width: 0 !important;
+            min-height: 86px !important;
+            padding: 13px !important;
+          }
+
+          .adminDashboard .stat .n {
+            font-size: 28px !important;
+          }
+
+          .adminDashboard .stat .l {
+            font-size: 11px !important;
+          }
+
+          .adminDashboard .statJumpHint {
+            font-size: 9px !important;
+          }
+
+          .adminDashboard .grid3 {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 7px !important;
+          }
+
+          .adminDashboard .miniStat {
+            min-width: 0 !important;
+            padding: 10px 6px !important;
+            text-align: center !important;
+          }
+
+          .adminDashboard .miniStat b {
+            font-size: 18px !important;
+          }
+
+          .adminDashboard .miniStat span {
+            font-size: 8px !important;
+            line-height: 1.25 !important;
+          }
+
+          .adminDashboard .dashboardSection,
+          .adminDashboard .studentStatusSection {
+            width: 100% !important;
+            box-sizing: border-box !important;
+            padding: 13px !important;
+            border-radius: 16px !important;
+          }
+
+          .adminDashboard .sectionHeading,
+          .adminDashboard .studentStatusSectionHeader {
+            gap: 10px !important;
+          }
+
+          .adminDashboard .sectionHeading > div:last-child {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+            width: 100% !important;
+          }
+
+          .adminDashboard .sectionHeading > div:last-child .btn {
+            width: 100% !important;
+            min-width: 0 !important;
+          }
+
+          .adminDashboard .filterGrid {
+            grid-template-columns: 1fr !important;
+            gap: 8px !important;
+          }
+
+          .adminDashboard .filterGrid input,
+          .adminDashboard .filterGrid select {
+            width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            min-height: 46px !important;
+          }
+
+          /* Desktop table becomes compact, readable mobile cards. */
+          .adminDashboard .tableWrap {
+            overflow: visible !important;
+            border: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+          }
+
+          .adminDashboard .table {
+            display: block !important;
+            width: 100% !important;
+            min-width: 0 !important;
+          }
+
+          .adminDashboard .table thead {
+            display: none !important;
+          }
+
+          .adminDashboard .table tbody {
+            display: grid !important;
+            gap: 10px !important;
+          }
+
+          .adminDashboard .table tbody tr {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 0 !important;
+            padding: 4px !important;
+            border: 1px solid #e4eaf2 !important;
+            border-radius: 15px !important;
+            background: #fff !important;
+            box-shadow: 0 8px 24px rgba(11,42,91,.055) !important;
+            overflow: visible !important;
+          }
+
+          .adminDashboard .table td {
+            min-width: 0 !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+            padding: 9px 10px !important;
+            border-bottom: 1px solid #edf1f6 !important;
+            font-size: 11px !important;
+            line-height: 1.35 !important;
+            box-sizing: border-box !important;
+          }
+
+          .adminDashboard .table td::before {
+            content: attr(data-label);
+            display: block;
+            margin-bottom: 3px;
+            color: #8a97aa;
+            font-size: 8px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+          }
+
+          .adminDashboard .table td:nth-child(2),
+          .adminDashboard .table td:nth-child(7),
+          .adminDashboard .table td:nth-child(10),
+          .adminDashboard .table td:nth-child(11) {
+            grid-column: 1 / -1 !important;
+          }
+
+          .adminDashboard .table td:last-child {
+            border-bottom: 0 !important;
+          }
+
+          .adminDashboard .table td b {
+            font-size: 13px !important;
+          }
+
+          .adminDashboard .table td small {
+            font-size: 9px !important;
+          }
+
+          .adminDashboard .studentActionMenu {
+            width: 100% !important;
+            justify-content: stretch !important;
+          }
+
+          .adminDashboard .studentActionMenu > .btn {
+            width: 100% !important;
+            min-height: 44px !important;
+            touch-action: manipulation;
+          }
+
+          /* Mobile Actions sheet: fixed to the viewport, above the table. */
           .studentActionPanel {
             position: fixed !important;
-            right: 12px !important;
-            left: 12px !important;
+            left: 10px !important;
+            right: 10px !important;
             top: auto !important;
-            bottom: 12px !important;
+            bottom: max(10px, env(safe-area-inset-bottom)) !important;
             width: auto !important;
-            max-height: min(72vh, 560px);
-            overflow-y: auto;
-            transform-origin: bottom center;
+            max-height: min(76vh, 620px) !important;
+            overflow-y: auto !important;
+            z-index: 999999 !important;
+            padding: 10px !important;
+            border-radius: 20px !important;
+            background: rgba(255,255,255,.995) !important;
+            box-shadow: 0 30px 90px rgba(4,25,60,.30) !important;
+            pointer-events: auto !important;
+            touch-action: pan-y !important;
+            transform-origin: bottom center !important;
+          }
+
+          .studentActionPanel .studentActionItem {
+            min-height: 54px !important;
+            padding: 10px !important;
+            touch-action: manipulation !important;
+          }
+
+          .studentActionPanel .studentActionIcon {
+            width: 38px !important;
+            height: 38px !important;
+            flex-basis: 38px !important;
+          }
+
+          .studentActionPanel .studentActionItem b {
+            font-size: 13px !important;
+          }
+
+          .studentActionPanel .studentActionItem small {
+            font-size: 10px !important;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .adminDashboard {
+            padding-left: 7px !important;
+            padding-right: 7px !important;
+          }
+
+          .adminDashboard .dashboardSection,
+          .adminDashboard .studentStatusSection {
+            padding: 10px !important;
+          }
+
+          .adminDashboard .sectionHeading > div:last-child {
+            grid-template-columns: 1fr !important;
+          }
+
+          .adminDashboard .grid3 {
+            gap: 5px !important;
+          }
+
+          .adminDashboard .miniStat {
+            padding-left: 4px !important;
+            padding-right: 4px !important;
           }
         }
       `}</style>
