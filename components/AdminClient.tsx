@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type AnyRecord = Record<string, any>;
 
@@ -134,6 +135,7 @@ export default function AdminClient({
 
   const [openActionsId, setOpenActionsId] =
     useState<string | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState({ top: 0, right: 18 });
 
   const [customFeeStudent, setCustomFeeStudent] =
     useState<AnyRecord | null>(null);
@@ -172,6 +174,23 @@ export default function AdminClient({
     active: true,
   });
 
+  // Fast in-page navigation. These refs avoid reloads and jump
+  // directly to the requested student section.
+  const studentDirectoryRef = useRef<HTMLDivElement | null>(null);
+  const activeStudentsRef = useRef<HTMLDivElement | null>(null);
+  const inactiveStudentsRef = useRef<HTMLDivElement | null>(null);
+
+  function scrollToSection(
+    ref: { current: HTMLDivElement | null }
+  ) {
+    requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
   useEffect(() => {
     function handleDocumentClick(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
@@ -183,8 +202,17 @@ export default function AdminClient({
 
     document.addEventListener("click", handleDocumentClick);
 
+    function closeActionMenuOnViewportChange() {
+      setOpenActionsId(null);
+    }
+
+    window.addEventListener("scroll", closeActionMenuOnViewportChange, true);
+    window.addEventListener("resize", closeActionMenuOnViewportChange);
+
     return () => {
       document.removeEventListener("click", handleDocumentClick);
+      window.removeEventListener("scroll", closeActionMenuOnViewportChange, true);
+      window.removeEventListener("resize", closeActionMenuOnViewportChange);
     };
   }, []);
 
@@ -748,6 +776,24 @@ export default function AdminClient({
     paymentStatus,
   ]);
 
+  // Keep Active and Not Active lists completely separate while still
+  // respecting all search/filter controls above.
+  const activeRows = useMemo(
+    () =>
+      visibleRows.filter(
+        ({ student }) => student.active !== false
+      ),
+    [visibleRows]
+  );
+
+  const inactiveRows = useMemo(
+    () =>
+      visibleRows.filter(
+        ({ student }) => student.active === false
+      ),
+    [visibleRows]
+  );
+
   const counts = useMemo(() => {
     return {
       total: students.length,
@@ -1148,11 +1194,26 @@ export default function AdminClient({
       );
 
       if (response.ok) {
-        showToast(
-          "Combined payment verified. Refreshing…"
+        // Do not reload the whole dashboard. Keep the UI instant and
+        // update every invoice belonging to this payment group locally.
+        setInvoices((current) =>
+          current.map((invoice) =>
+            invoice.payment_group_id === groupId
+              ? {
+                  ...invoice,
+                  status: "PAID",
+                  paid_at:
+                    invoice.paid_at ||
+                    new Date().toISOString(),
+                }
+              : invoice
+          )
         );
 
-        window.location.reload();
+        setProcessView(null);
+        showToast(
+          "Combined payment verified successfully."
+        );
       } else {
         showToast(
           "Combined payment verification failed."
@@ -1257,527 +1318,14 @@ export default function AdminClient({
     URL.revokeObjectURL(url);
   }
 
-  const mergeStudentName =
-    merge?.student?.student_name ||
-    merge?.student?.name ||
-    "Student";
-
-  const mergeMatches =
-    Array.isArray(merge?.matches)
-      ? merge.matches
-      : [];
-
-  return (
-    <main
-      className="container adminDashboard"
-      style={{
-        padding:
-          "30px 20px 80px",
-      }}
-    >
-      <style>{`
-        .studentActionPanel {
-          animation: gpcActionPanelIn .18s cubic-bezier(.2,.8,.2,1);
-          transform-origin: top right;
-        }
-
-        .studentActionItem {
-          width: 100%;
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          padding: 10px 10px;
-          margin: 2px 0;
-          border: 0;
-          border-radius: 13px;
-          background: transparent;
-          color: #17243a;
-          text-align: left;
-          cursor: pointer;
-          font: inherit;
-          transition:
-            background .18s ease,
-            transform .18s ease,
-            box-shadow .18s ease;
-        }
-
-        .studentActionItem:hover:not(:disabled) {
-          background: #f4f7fb;
-          transform: translateX(2px);
-        }
-
-        .studentActionItem:disabled {
-          opacity: .52;
-          cursor: not-allowed;
-        }
-
-        .studentActionItem b {
-          display: block;
-          font-size: 12px;
-          line-height: 1.25;
-          font-weight: 850;
-          color: #102b57;
-        }
-
-        .studentActionItem small {
-          display: block;
-          margin-top: 3px;
-          color: #78879d;
-          font-size: 10px;
-          line-height: 1.25;
-        }
-
-        .studentActionIcon {
-          width: 34px;
-          height: 34px;
-          flex: 0 0 34px;
-          display: grid;
-          place-items: center;
-          border-radius: 11px;
-          background: #eef3fa;
-          color: #0b2a5b;
-          font-size: 15px;
-          font-weight: 900;
-        }
-
-        .studentActionItemPrimary .studentActionIcon {
-          background: #eaf2ff;
-          color: #0b2a5b;
-        }
-
-        .studentActionItemDanger:hover:not(:disabled) {
-          background: #fff3f1;
-        }
-
-        .studentActionItemDanger .studentActionIcon {
-          background: #fff0ef;
-          color: #b42318;
-        }
-
-        .studentActionItemVerify {
-          background: #fffaf0;
-        }
-
-        .studentActionItemVerify .studentActionIcon {
-          background: #fff1cc;
-          color: #8a5d00;
-        }
-
-        .customFeeModalField {
-          min-width: 0;
-        }
-
-        .customFeeModalField label {
-          display: block;
-          margin-bottom: 7px;
-          color: #263750;
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .customFeeModalField input,
-        .customFeeModalField select {
-          width: 100%;
-          min-height: 48px;
-          box-sizing: border-box;
-          padding: 12px 14px;
-          border: 1px solid #dbe3ee;
-          border-radius: 11px;
-          background: #fff;
-          color: #12203a;
-          font-size: 14px;
-          outline: none;
-          transition:
-            border-color .18s ease,
-            box-shadow .18s ease;
-        }
-
-        .customFeeModalField input:focus,
-        .customFeeModalField select:focus {
-          border-color: #b98510;
-          box-shadow: 0 0 0 3px rgba(185,133,16,.10);
-        }
-
-        @keyframes gpcActionPanelIn {
-          from {
-            opacity: 0;
-            transform: translateY(-5px) scale(.985);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-
-        @media (max-width: 700px) {
-          .studentActionPanel {
-            position: fixed !important;
-            right: 12px !important;
-            left: 12px !important;
-            top: auto !important;
-            bottom: 12px !important;
-            width: auto !important;
-            max-height: min(72vh, 560px);
-            overflow-y: auto;
-            transform-origin: bottom center;
-          }
-        }
-      `}</style>
-
-      <div className="adminHeader">
-        <div>
-          <div className="eyebrow">
-            PRIVATE OPERATOR AREA
-          </div>
-
-          <h1
-            style={{
-              margin: "6px 0",
-            }}
-          >
-            Global Punjabi Classes — Admin
-          </h1>
-
-          <p
-            style={{
-              color: "#64748b",
-            }}
-          >
-            Fee operations ·{" "}
-            {new Date(
-              month
-            ).toLocaleString(
-              "en-US",
-              {
-                month: "long",
-                year: "numeric",
-              }
-            )}
-          </p>
-        </div>
-
-        <div className="headerActions">
-          <a
-            href="/"
-            className="btn btnGhost"
-          >
-            Public Home
-          </a>
-
-          <button
-            className="btn btnGhost"
-            onClick={async () => {
-              await fetch(
-                "/api/admin/logout",
-                {
-                  method: "POST",
-                }
-              );
-
-              window.location.href =
-                "/admin/login";
-            }}
-          >
-            Log out
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid4 statsGrid">
-        <div className="card stat">
-          <div className="n">
-            {counts.total}
-          </div>
-
-          <div className="l">
-            Total Students
-          </div>
-        </div>
-
-        <div className="card stat">
-          <div className="n">
-            {counts.active}
-          </div>
-
-          <div className="l">
-            Active Students
-          </div>
-        </div>
-
-        <div className="card stat">
-          <div className="n">
-            {counts.inactive}
-          </div>
-
-          <div className="l">
-            Not Active
-          </div>
-        </div>
-
-        <div className="card stat">
-          <div className="n">
-            {counts.received}
-          </div>
-
-          <div className="l">
-            Received This Month
-          </div>
-        </div>
-      </div>
-
-      <div
-        className="grid grid3"
-        style={{
-          marginBottom: 18,
-        }}
-      >
-        <div className="card miniStat">
-          <b>{counts.pending}</b>
-          <span>
-            Pending payments
-          </span>
-        </div>
-
-        <div className="card miniStat">
-          <b>{counts.progress}</b>
-          <span>
-            In progress
-          </span>
-        </div>
-
-        <div className="card miniStat">
-          <b>{teachers.length}</b>
-          <span>Teachers</span>
-        </div>
-      </div>
-
-      <section className="card dashboardSection">
-        <div className="sectionHeading">
-          <div>
-            <div className="eyebrow">
-              Student intelligence
-            </div>
-
-            <h2>
-              Search &amp; Filters
-            </h2>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              className="btn btnPrimary"
-              onClick={openAddStudent}
-            >
-              + Add Student
-            </button>
-
-            <button
-              className="btn btnGold"
-              onClick={exportCsv}
-            >
-              Export CSV
-            </button>
-          </div>
-        </div>
-
-        <div className="filterGrid">
-          <input
-            placeholder="Search student, age, days, teacher, country…"
-            value={query}
-            onChange={(event) =>
-              setQuery(
-                event.target.value
-              )
-            }
-          />
-
-          <select
-            value={country}
-            onChange={(event) =>
-              setCountry(
-                event.target.value
-              )
-            }
-          >
-            <option value="ALL">
-              All Countries
-            </option>
-
-            {COUNTRIES.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-
-          <select
-            value={currency}
-            onChange={(event) =>
-              setCurrency(
-                event.target.value
-              )
-            }
-          >
-            <option value="ALL">
-              All Currencies
-            </option>
-
-            {CURRENCIES.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-
-          <select
-            value={teacher}
-            onChange={(event) =>
-              setTeacher(
-                event.target.value
-              )
-            }
-          >
-            <option value="ALL">
-              All Teachers
-            </option>
-
-            {teachers.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-
-          <select
-            value={group}
-            onChange={(event) =>
-              setGroup(
-                event.target.value
-              )
-            }
-          >
-            <option value="ALL">
-              All Groups
-            </option>
-
-            {GROUPS.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-
-          <select
-            value={gender}
-            onChange={(event) =>
-              setGender(
-                event.target.value
-              )
-            }
-          >
-            <option value="ALL">
-              All Genders
-            </option>
-
-            <option value="Male">
-              Male
-            </option>
-
-            <option value="Female">
-              Female
-            </option>
-          </select>
-
-          <select
-            value={paymentStatus}
-            onChange={(event) =>
-              setPaymentStatus(
-                event.target.value
-              )
-            }
-          >
-            <option value="ALL">
-              All Payment Status
-            </option>
-
-            <option value="PENDING">
-              Pending
-            </option>
-
-            <option value="PROCESSING">
-              In Progress
-            </option>
-
-            <option value="VERIFYING">
-              In Progress
-            </option>
-
-            <option value="PAID">
-              Received
-            </option>
-          </select>
-        </div>
-
-        <div className="tableWrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>S.No</th>
-                <th>Student</th>
-                <th>Age</th>
-                <th>Country</th>
-                <th>Days</th>
-                <th>Teacher</th>
-                <th>Groups</th>
-                <th>Currency</th>
-                <th>Fee</th>
-                <th>Payment</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {visibleRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={11}
-                    style={{
-                      textAlign: "center",
-                      padding: "42px 20px",
-                    }}
-                  >
-                    <b>No students found</b>
-                    <div className="mutedText" style={{ marginTop: 6 }}>
-                      Try changing your search or filters.
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                visibleRows.map(
-                  ({
-                    student,
-                    invoice,
-                  }) => (
+  function renderStudentRow({
+    student,
+    invoice,
+  }: {
+    student: AnyRecord;
+    invoice: AnyRecord | undefined;
+  }) {
+    return (
                   <tr
                     key={student.id}
                   >
@@ -1901,11 +1449,25 @@ export default function AdminClient({
                           onClick={(event) => {
                             event.stopPropagation();
 
-                            setOpenActionsId((current) =>
-                              current === student.id
-                                ? null
-                                : student.id
-                            );
+                            if (openActionsId === student.id) {
+                              setOpenActionsId(null);
+                              return;
+                            }
+
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const menuHeight = Math.min(520, window.innerHeight - 32);
+                            const gap = 8;
+                            const below = rect.bottom + gap;
+                            const top =
+                              below + menuHeight <= window.innerHeight - 12
+                                ? below
+                                : Math.max(12, rect.top - menuHeight - gap);
+
+                            setActionMenuPosition({
+                              top,
+                              right: Math.max(12, window.innerWidth - rect.right),
+                            });
+                            setOpenActionsId(student.id);
                           }}
                           aria-expanded={
                             openActionsId === student.id
@@ -1917,17 +1479,19 @@ export default function AdminClient({
                             : "••• Actions"}
                         </button>
 
-                        {openActionsId === student.id && (
-                          <div
-                            className="studentActionPanel"
+                        {openActionsId === student.id &&
+                          typeof document !== "undefined" &&
+                          createPortal(
+                            <div
+                              className="studentActionPanel"
                             role="menu"
                             onClick={(event) =>
                               event.stopPropagation()
                             }
                             style={{
                               position: "fixed",
-                              right: 18,
-                              top: 96,
+                              top: actionMenuPosition.top,
+                              right: actionMenuPosition.right,
                               zIndex: 2147483647,
                               width: 260,
                               padding: 8,
@@ -2159,16 +1723,665 @@ export default function AdminClient({
                                 </span>
                               </button>
                             )}
-                          </div>
-                        )}
+                            </div>,
+                            document.body
+                          )}
                       </div>
                     </td>
                   </tr>
-                  )
-                )
-              )}
-            </tbody>
-          </table>
+    );
+  }
+
+  function renderStudentTable(
+    rows: Array<{
+      student: AnyRecord;
+      invoice: AnyRecord | undefined;
+    }>,
+    emptyTitle: string
+  ) {
+    return (
+      <div className="tableWrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>S.No</th>
+              <th>Student</th>
+              <th>Age</th>
+              <th>Country</th>
+              <th>Days</th>
+              <th>Teacher</th>
+              <th>Groups</th>
+              <th>Currency</th>
+              <th>Fee</th>
+              <th>Payment</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={11}
+                  style={{
+                    textAlign: "center",
+                    padding: "42px 20px",
+                  }}
+                >
+                  <b>{emptyTitle}</b>
+                  <div
+                    className="mutedText"
+                    style={{ marginTop: 6 }}
+                  >
+                    Try changing your search or filters.
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              rows.map(renderStudentRow)
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  const mergeStudentName =
+    merge?.student?.student_name ||
+    merge?.student?.name ||
+    "Student";
+
+  const mergeMatches =
+    Array.isArray(merge?.matches)
+      ? merge.matches
+      : [];
+
+  return (
+    <main
+      className="container adminDashboard"
+      style={{
+        padding:
+          "30px 20px 80px",
+      }}
+    >
+      <style>{`
+        .studentActionPanel {
+          animation: gpcActionPanelIn .18s cubic-bezier(.2,.8,.2,1);
+          transform-origin: top right;
+        }
+
+        .studentActionItem {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 10px 10px;
+          margin: 2px 0;
+          border: 0;
+          border-radius: 13px;
+          background: transparent;
+          color: #17243a;
+          text-align: left;
+          cursor: pointer;
+          font: inherit;
+          transition:
+            background .18s ease,
+            transform .18s ease,
+            box-shadow .18s ease;
+        }
+
+        .studentActionItem:hover:not(:disabled) {
+          background: #f4f7fb;
+          transform: translateX(2px);
+        }
+
+        .studentActionItem:disabled {
+          opacity: .52;
+          cursor: not-allowed;
+        }
+
+        .studentActionItem b {
+          display: block;
+          font-size: 12px;
+          line-height: 1.25;
+          font-weight: 850;
+          color: #102b57;
+        }
+
+        .studentActionItem small {
+          display: block;
+          margin-top: 3px;
+          color: #78879d;
+          font-size: 10px;
+          line-height: 1.25;
+        }
+
+        .studentActionIcon {
+          width: 34px;
+          height: 34px;
+          flex: 0 0 34px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: #eef3fa;
+          color: #0b2a5b;
+          font-size: 15px;
+          font-weight: 900;
+        }
+
+        .studentActionItemPrimary .studentActionIcon {
+          background: #eaf2ff;
+          color: #0b2a5b;
+        }
+
+        .studentActionItemDanger:hover:not(:disabled) {
+          background: #fff3f1;
+        }
+
+        .studentActionItemDanger .studentActionIcon {
+          background: #fff0ef;
+          color: #b42318;
+        }
+
+        .studentActionItemVerify {
+          background: #fffaf0;
+        }
+
+        .studentActionItemVerify .studentActionIcon {
+          background: #fff1cc;
+          color: #8a5d00;
+        }
+
+        .customFeeModalField {
+          min-width: 0;
+        }
+
+        .customFeeModalField label {
+          display: block;
+          margin-bottom: 7px;
+          color: #263750;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .customFeeModalField input,
+        .customFeeModalField select {
+          width: 100%;
+          min-height: 48px;
+          box-sizing: border-box;
+          padding: 12px 14px;
+          border: 1px solid #dbe3ee;
+          border-radius: 11px;
+          background: #fff;
+          color: #12203a;
+          font-size: 14px;
+          outline: none;
+          transition:
+            border-color .18s ease,
+            box-shadow .18s ease;
+        }
+
+        .customFeeModalField input:focus,
+        .customFeeModalField select:focus {
+          border-color: #b98510;
+          box-shadow: 0 0 0 3px rgba(185,133,16,.10);
+        }
+
+        @keyframes gpcActionPanelIn {
+          from {
+            opacity: 0;
+            transform: translateY(-5px) scale(.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @media (max-width: 700px) {
+          .studentActionPanel {
+            position: fixed !important;
+            right: 12px !important;
+            left: 12px !important;
+            top: auto !important;
+            bottom: 12px !important;
+            width: auto !important;
+            max-height: min(72vh, 560px);
+            overflow-y: auto;
+            transform-origin: bottom center;
+          }
+        }
+      `}</style>
+
+      <div className="adminHeader">
+        <div>
+          <div className="eyebrow">
+            PRIVATE OPERATOR AREA
+          </div>
+
+          <h1
+            style={{
+              margin: "6px 0",
+            }}
+          >
+            Global Punjabi Classes — Admin
+          </h1>
+
+          <p
+            style={{
+              color: "#64748b",
+            }}
+          >
+            Fee operations ·{" "}
+            {new Date(
+              month
+            ).toLocaleString(
+              "en-US",
+              {
+                month: "long",
+                year: "numeric",
+              }
+            )}
+          </p>
+        </div>
+
+        <div className="headerActions">
+          <a
+            href="/"
+            className="btn btnGhost"
+          >
+            Public Home
+          </a>
+
+          <button
+            className="btn btnGhost"
+            onClick={async () => {
+              await fetch(
+                "/api/admin/logout",
+                {
+                  method: "POST",
+                }
+              );
+
+              window.location.href =
+                "/admin/login";
+            }}
+          >
+            Log out
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid4 statsGrid">
+        <div
+          className="card stat statInteractive"
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            scrollToSection(studentDirectoryRef)
+          }
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+              scrollToSection(studentDirectoryRef);
+            }
+          }}
+        >
+          <div className="n">{counts.total}</div>
+          <div className="l">Total Students</div>
+          <span className="statJumpHint">
+            View student directory →
+          </span>
+        </div>
+
+        <div
+          className="card stat statInteractive statInteractiveActive"
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            scrollToSection(activeStudentsRef)
+          }
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+              scrollToSection(activeStudentsRef);
+            }
+          }}
+        >
+          <div className="n">{counts.active}</div>
+          <div className="l">Active Students</div>
+          <span className="statJumpHint">
+            Jump to active list →
+          </span>
+        </div>
+
+        <div
+          className="card stat statInteractive statInteractiveInactive"
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            scrollToSection(inactiveStudentsRef)
+          }
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+              scrollToSection(inactiveStudentsRef);
+            }
+          }}
+        >
+          <div className="n">{counts.inactive}</div>
+          <div className="l">Not Active</div>
+          <span className="statJumpHint">
+            Jump to inactive list →
+          </span>
+        </div>
+
+        <div className="card stat">
+          <div className="n">{counts.received}</div>
+          <div className="l">Received This Month</div>
+        </div>
+      </div>
+
+      <div
+        className="grid grid3"
+        style={{
+          marginBottom: 18,
+        }}
+      >
+        <div className="card miniStat">
+          <b>{counts.pending}</b>
+          <span>
+            Pending payments
+          </span>
+        </div>
+
+        <div className="card miniStat">
+          <b>{counts.progress}</b>
+          <span>
+            In progress
+          </span>
+        </div>
+
+        <div className="card miniStat">
+          <b>{teachers.length}</b>
+          <span>Teachers</span>
+        </div>
+      </div>
+
+      <section
+        ref={studentDirectoryRef}
+        className="card dashboardSection studentDirectorySection"
+      >
+        <div className="sectionHeading">
+          <div>
+            <div className="eyebrow">
+              Student intelligence
+            </div>
+
+            <h2>
+              Search &amp; Filters
+            </h2>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              className="btn btnPrimary"
+              onClick={openAddStudent}
+            >
+              + Add Student
+            </button>
+
+            <button
+              className="btn btnGold"
+              onClick={exportCsv}
+            >
+              Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div className="filterGrid">
+          <input
+            placeholder="Search student, age, days, teacher, country…"
+            value={query}
+            onChange={(event) =>
+              setQuery(
+                event.target.value
+              )
+            }
+          />
+
+          <select
+            value={country}
+            onChange={(event) =>
+              setCountry(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Countries
+            </option>
+
+            {COUNTRIES.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={currency}
+            onChange={(event) =>
+              setCurrency(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Currencies
+            </option>
+
+            {CURRENCIES.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={teacher}
+            onChange={(event) =>
+              setTeacher(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Teachers
+            </option>
+
+            {teachers.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={group}
+            onChange={(event) =>
+              setGroup(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Groups
+            </option>
+
+            {GROUPS.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={gender}
+            onChange={(event) =>
+              setGender(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Genders
+            </option>
+
+            <option value="Male">
+              Male
+            </option>
+
+            <option value="Female">
+              Female
+            </option>
+          </select>
+
+          <select
+            value={paymentStatus}
+            onChange={(event) =>
+              setPaymentStatus(
+                event.target.value
+              )
+            }
+          >
+            <option value="ALL">
+              All Payment Status
+            </option>
+
+            <option value="PENDING">
+              Pending
+            </option>
+
+            <option value="PROCESSING">
+              In Progress
+            </option>
+
+            <option value="VERIFYING">
+              In Progress
+            </option>
+
+            <option value="PAID">
+              Received
+            </option>
+          </select>
+        </div>
+
+        <div
+          ref={activeStudentsRef}
+          id="active-students"
+          className="studentStatusSection"
+        >
+          <div className="studentStatusSectionHeader">
+            <div>
+              <div className="eyebrow">ACTIVE STUDENTS</div>
+              <h3>
+                Active Students
+                <span className="studentSectionCount">
+                  {activeRows.length}
+                </span>
+              </h3>
+              <p>
+                Students currently active and available for normal
+                monthly payment operations.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="sectionJumpButton"
+              onClick={() =>
+                scrollToSection(studentDirectoryRef)
+              }
+            >
+              Student Directory ↑
+            </button>
+          </div>
+
+          {renderStudentTable(
+            activeRows,
+            visibleRows.length === 0
+              ? "No students found"
+              : "No active students match the current filters"
+          )}
+        </div>
+
+        <div
+          ref={inactiveStudentsRef}
+          id="inactive-students"
+          className="studentStatusSection studentStatusSectionInactive"
+        >
+          <div className="studentStatusSectionHeader">
+            <div>
+              <div className="eyebrow">NOT ACTIVE STUDENTS</div>
+              <h3>
+                Not Active Students
+                <span className="studentSectionCount studentSectionCountMuted">
+                  {inactiveRows.length}
+                </span>
+              </h3>
+              <p>
+                Inactive students stay here and are separated from the
+                active student workflow.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="sectionJumpButton"
+              onClick={() =>
+                scrollToSection(studentDirectoryRef)
+              }
+            >
+              Student Directory ↑
+            </button>
+          </div>
+
+          {renderStudentTable(
+            inactiveRows,
+            visibleRows.length === 0
+              ? "No students found"
+              : "No inactive students match the current filters"
+          )}
         </div>
       </section>
 
