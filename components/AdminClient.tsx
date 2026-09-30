@@ -118,6 +118,11 @@ export default function AdminClient({
   const [merge, setMerge] =
     useState<AnyRecord | null>(null);
 
+  // Stores the secure URL returned after a merged payment link is created,
+  // so the operator can copy it directly from the merge window.
+  const [mergePaymentLink, setMergePaymentLink] =
+    useState("");
+
   const [processView, setProcessView] =
     useState<AnyRecord | null>(null);
 
@@ -1064,8 +1069,23 @@ export default function AdminClient({
     }
   }
 
+  async function copyMergedPaymentLink() {
+    if (!mergePaymentLink) return;
+
+    try {
+      await navigator.clipboard.writeText(
+        mergePaymentLink
+      );
+      showToast("Merged payment link copied.");
+    } catch {
+      showToast("Could not copy the merged payment link.");
+    }
+  }
+
   async function mergeAndSend() {
     if (!merge) return;
+
+    setMergePaymentLink("");
 
     const checkboxes =
       Array.from(
@@ -1122,11 +1142,15 @@ export default function AdminClient({
             ? data.studentIds.length
             : studentIds.length;
 
+        if (data.paymentUrl) {
+          setMergePaymentLink(
+            String(data.paymentUrl)
+          );
+        }
+
         showToast(
           `Combined payment link sent for ${count} students. ${getSendResultMessage(data)}`
         );
-
-        setMerge(null);
       } else {
         showToast(
           data.error ||
@@ -1696,8 +1720,9 @@ export default function AdminClient({
                               </span>
                             </button>
 
-                            {invoice?.status ===
-                              "VERIFYING" && (
+                            {invoice &&
+                              invoice.status !==
+                                "PAID" && (
                               <button
                                 type="button"
                                 className="studentActionItem studentActionItemVerify"
@@ -1715,10 +1740,10 @@ export default function AdminClient({
 
                                 <span>
                                   <b>
-                                    Verify Payment
+                                    Manual Verify Payment
                                   </b>
                                   <small>
-                                    Approve this submitted payment
+                                    Mark this payment as received
                                   </small>
                                 </span>
                               </button>
@@ -3499,8 +3524,8 @@ export default function AdminClient({
               </button>
 
               {processView.invoice
-                .status ===
-                "VERIFYING" && (
+                .status !==
+                "PAID" && (
                 <button
                   className="btn btnGold"
                   onClick={async () => {
@@ -3514,12 +3539,14 @@ export default function AdminClient({
                     );
                   }}
                 >
-                  Verify Payment
+                  Manual Verify Payment
                 </button>
               )}
 
               {processView.invoice
-                .payment_group_id && (
+                .payment_group_id &&
+                processView.invoice.status !==
+                  "PAID" && (
                 <button
                   className="btn btnPrimary"
                   onClick={() =>
@@ -3597,6 +3624,60 @@ export default function AdminClient({
               )}
             </div>
 
+            {mergePaymentLink && (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 14,
+                  borderRadius: 16,
+                  background: "#f7f9fc",
+                  border: "1px solid #e5ebf3",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: "#718096",
+                    marginBottom: 7,
+                  }}
+                >
+                  MERGED PAYMENT LINK
+                </div>
+
+                <input
+                  readOnly
+                  value={mergePaymentLink}
+                  onFocus={(event) =>
+                    event.currentTarget.select()
+                  }
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    minHeight: 46,
+                    padding: "11px 13px",
+                    border: "1px solid #dbe3ee",
+                    borderRadius: 11,
+                    background: "#fff",
+                    color: "#12203a",
+                    fontSize: 12,
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className="btn btnPrimary"
+                  onClick={copyMergedPaymentLink}
+                  style={{
+                    width: "100%",
+                    marginTop: 10,
+                  }}
+                >
+                  Copy Merged Payment Link
+                </button>
+              </div>
+            )}
+
             <div className="modalActions">
               <button
                 className="btn btnGhost"
@@ -3605,6 +3686,7 @@ export default function AdminClient({
                     merge.student?.id;
 
                   setMerge(null);
+                  setMergePaymentLink("");
 
                   if (studentId) {
                     void sendLinkSeparate(
@@ -3616,12 +3698,32 @@ export default function AdminClient({
                 Send Separately
               </button>
 
-              <button
-                className="btn btnGold"
-                onClick={mergeAndSend}
-              >
-                Merge &amp; Send One Link
-              </button>
+              {!mergePaymentLink && (
+                <button
+                  className="btn btnGold"
+                  onClick={mergeAndSend}
+                  disabled={
+                    sending ===
+                    merge.student?.id
+                  }
+                >
+                  {sending === merge.student?.id
+                    ? "Creating…"
+                    : "Merge &amp; Send One Link"}
+                </button>
+              )}
+
+              {mergePaymentLink && (
+                <button
+                  className="btn btnGold"
+                  onClick={() => {
+                    setMerge(null);
+                    setMergePaymentLink("");
+                  }}
+                >
+                  Done
+                </button>
+              )}
             </div>
           </div>
         </div>
