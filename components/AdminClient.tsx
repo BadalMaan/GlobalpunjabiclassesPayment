@@ -190,18 +190,6 @@ export default function AdminClient({
   }
 
   useEffect(() => {
-    const mobile = window.matchMedia("(max-width: 700px)").matches;
-    if (!mobile || !openActionsId) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [openActionsId]);
-
-  useEffect(() => {
     function handleDocumentClick(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
 
@@ -1330,13 +1318,13 @@ export default function AdminClient({
                   <tr
                     key={student.id}
                   >
-                    <td data-label="S.No">
+                    <td>
                       {
                         student.serial_number
                       }
                     </td>
 
-                    <td data-label="Student">
+                    <td>
                       <b>
                         {
                           student.student_name
@@ -1353,26 +1341,26 @@ export default function AdminClient({
                       </small>
                     </td>
 
-                    <td data-label="Age">
+                    <td>
                       {student.age ||
                         "—"}
                     </td>
 
-                    <td data-label="Country">
+                    <td>
                       {student.country}
                     </td>
 
-                    <td data-label="Days">
+                    <td>
                       {student.days ||
                         "—"}
                     </td>
 
-                    <td data-label="Teacher">
+                    <td>
                       {student.teacher_name ||
                         "—"}
                     </td>
 
-                    <td data-label="Groups">
+                    <td>
                       {(
                         Array.isArray(
                           student.groups
@@ -1383,20 +1371,20 @@ export default function AdminClient({
                         "—"}
                     </td>
 
-                    <td data-label="Currency">
+                    <td>
                       {
                         invoice?.currency ||
                         student.currency
                       }
                     </td>
 
-                    <td data-label="Fee">
+                    <td>
                       {invoice
                         ? `${invoice.currency} ${invoice.amount}`
                         : `${student.currency} ${student.monthly_fee}`}
                     </td>
 
-                    <td data-label="Payment">
+                    <td>
                       {invoice ? (
                         <>
                           <span
@@ -1434,7 +1422,7 @@ export default function AdminClient({
                       )}
                     </td>
 
-                    <td data-label="Action">
+                    <td>
                       <div
                         className="studentActionMenu"
                         data-student-actions
@@ -1922,41 +1910,54 @@ export default function AdminClient({
         }
 
         @media (max-width: 700px) {
+          .studentActionPanel {
+            position: fixed !important;
+            right: 12px !important;
+            left: 12px !important;
+            top: auto !important;
+            bottom: 12px !important;
+            width: auto !important;
+            max-height: min(72vh, 560px);
+            overflow-y: auto;
+            transform-origin: bottom center;
+          }
+        }
+        /* Safe responsive admin/mobile layer */
+        .studentActionPanel {
+          position: fixed !important;
+          right: 18px !important;
+          top: 96px !important;
+          bottom: auto !important;
+          z-index: 99999 !important;
+          width: 280px !important;
+          max-width: calc(100vw - 24px) !important;
+          max-height: calc(100vh - 112px) !important;
+          overflow-y: auto !important;
+        }
+
+        @media (max-width: 700px) {
           .adminDashboard {
             width: 100% !important;
-            max-width: none !important;
+            max-width: 100% !important;
+            padding: 12px 8px 50px !important;
             box-sizing: border-box !important;
-            padding: 14px 10px 72px !important;
-          }
-
-          .adminDashboard .adminHeader {
-            display: grid !important;
-            gap: 12px !important;
-            margin-bottom: 14px !important;
           }
 
           .adminDashboard .adminHeader h1 {
-            font-size: 24px !important;
-            line-height: 1.12 !important;
-          }
-
-          .adminDashboard .adminHeader p {
-            font-size: 12px !important;
-            line-height: 1.45 !important;
+            font-size: 21px !important;
+            line-height: 1.15 !important;
           }
 
           .adminDashboard .headerActions {
+            width: 100% !important;
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
-            width: 100% !important;
             gap: 8px !important;
           }
 
           .adminDashboard .headerActions .btn {
             width: 100% !important;
             min-width: 0 !important;
-            padding: 10px 8px !important;
-            font-size: 12px !important;
           }
 
           .adminDashboard .statsGrid {
@@ -1964,26 +1965,9 @@ export default function AdminClient({
             gap: 8px !important;
           }
 
-          .adminDashboard .statsGrid .stat:last-child {
-            grid-column: 1 / -1 !important;
-          }
-
           .adminDashboard .stat {
             min-width: 0 !important;
-            min-height: 86px !important;
-            padding: 13px !important;
-          }
-
-          .adminDashboard .stat .n {
-            font-size: 28px !important;
-          }
-
-          .adminDashboard .stat .l {
-            font-size: 11px !important;
-          }
-
-          .adminDashboard .statJumpHint {
-            font-size: 9px !important;
+            padding: 12px 9px !important;
           }
 
           .adminDashboard .grid3 {
@@ -1991,32 +1975,18 @@ export default function AdminClient({
             gap: 7px !important;
           }
 
-          .adminDashboard .miniStat {
-            min-width: 0 !important;
-            padding: 10px 6px !important;
-            text-align: center !important;
-          }
-
-          .adminDashboard .miniStat b {
-            font-size: 18px !important;
-          }
-
-          .adminDashboard .miniStat span {
-            font-size: 8px !important;
-            line-height: 1.25 !important;
-          }
-
           .adminDashboard .dashboardSection,
           .adminDashboard .studentStatusSection {
             width: 100% !important;
+            max-width: 100% !important;
             box-sizing: border-box !important;
-            padding: 13px !important;
-            border-radius: 16px !important;
+            padding: 11px !important;
+            border-radius: 15px !important;
           }
 
           .adminDashboard .sectionHeading,
           .adminDashboard .studentStatusSectionHeader {
-            gap: 10px !important;
+            display: block !important;
           }
 
           .adminDashboard .sectionHeading > div:last-child {
@@ -2024,6 +1994,7 @@ export default function AdminClient({
             grid-template-columns: 1fr 1fr !important;
             gap: 8px !important;
             width: 100% !important;
+            margin-top: 10px !important;
           }
 
           .adminDashboard .sectionHeading > div:last-child .btn {
@@ -2040,13 +2011,14 @@ export default function AdminClient({
           .adminDashboard .filterGrid select {
             width: 100% !important;
             min-width: 0 !important;
-            box-sizing: border-box !important;
             min-height: 46px !important;
+            box-sizing: border-box !important;
           }
 
-          /* Desktop table becomes compact, readable mobile cards. */
+          /* Convert the wide desktop table into compact mobile cards. */
           .adminDashboard .tableWrap {
-            overflow: visible !important;
+            width: 100% !important;
+            overflow-x: hidden !important;
             border: 0 !important;
             background: transparent !important;
             box-shadow: none !important;
@@ -2069,13 +2041,12 @@ export default function AdminClient({
 
           .adminDashboard .table tbody tr {
             display: grid !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            gap: 0 !important;
+            grid-template-columns: 1fr 1fr !important;
             padding: 4px !important;
             border: 1px solid #e4eaf2 !important;
             border-radius: 15px !important;
             background: #fff !important;
-            box-shadow: 0 8px 24px rgba(11,42,91,.055) !important;
+            box-shadow: 0 7px 20px rgba(11,42,91,.055) !important;
             overflow: visible !important;
           }
 
@@ -2083,7 +2054,7 @@ export default function AdminClient({
             min-width: 0 !important;
             white-space: normal !important;
             overflow-wrap: anywhere !important;
-            padding: 9px 10px !important;
+            padding: 9px !important;
             border-bottom: 1px solid #edf1f6 !important;
             font-size: 11px !important;
             line-height: 1.35 !important;
@@ -2091,15 +2062,26 @@ export default function AdminClient({
           }
 
           .adminDashboard .table td::before {
-            content: attr(data-label);
-            display: block;
-            margin-bottom: 3px;
-            color: #8a97aa;
-            font-size: 8px;
-            font-weight: 900;
-            letter-spacing: .08em;
-            text-transform: uppercase;
+            display: block !important;
+            margin-bottom: 3px !important;
+            color: #8a97aa !important;
+            font-size: 8px !important;
+            font-weight: 900 !important;
+            letter-spacing: .08em !important;
+            text-transform: uppercase !important;
           }
+
+          .adminDashboard .table td:nth-child(1)::before { content: "S.NO"; }
+          .adminDashboard .table td:nth-child(2)::before { content: "STUDENT"; }
+          .adminDashboard .table td:nth-child(3)::before { content: "AGE"; }
+          .adminDashboard .table td:nth-child(4)::before { content: "COUNTRY"; }
+          .adminDashboard .table td:nth-child(5)::before { content: "DAYS"; }
+          .adminDashboard .table td:nth-child(6)::before { content: "TEACHER"; }
+          .adminDashboard .table td:nth-child(7)::before { content: "GROUPS"; }
+          .adminDashboard .table td:nth-child(8)::before { content: "CURRENCY"; }
+          .adminDashboard .table td:nth-child(9)::before { content: "FEE"; }
+          .adminDashboard .table td:nth-child(10)::before { content: "PAYMENT"; }
+          .adminDashboard .table td:nth-child(11)::before { content: "ACTION"; }
 
           .adminDashboard .table td:nth-child(2),
           .adminDashboard .table td:nth-child(7),
@@ -2112,88 +2094,25 @@ export default function AdminClient({
             border-bottom: 0 !important;
           }
 
-          .adminDashboard .table td b {
-            font-size: 13px !important;
-          }
-
-          .adminDashboard .table td small {
-            font-size: 9px !important;
-          }
-
-          .adminDashboard .studentActionMenu {
+          .adminDashboard .studentActionMenu,
+          .adminDashboard .studentActionMenu > .btn {
             width: 100% !important;
-            justify-content: stretch !important;
           }
 
           .adminDashboard .studentActionMenu > .btn {
-            width: 100% !important;
             min-height: 44px !important;
-            touch-action: manipulation;
           }
 
-          /* Mobile Actions sheet: fixed to the viewport, above the table. */
+          /* Mobile Actions becomes a bottom sheet. */
           .studentActionPanel {
-            position: fixed !important;
-            left: 10px !important;
-            right: 10px !important;
+            left: 12px !important;
+            right: 12px !important;
             top: auto !important;
-            bottom: max(10px, env(safe-area-inset-bottom)) !important;
+            bottom: 12px !important;
             width: auto !important;
-            max-height: min(76vh, 620px) !important;
-            overflow-y: auto !important;
-            z-index: 999999 !important;
-            padding: 10px !important;
-            border-radius: 20px !important;
-            background: rgba(255,255,255,.995) !important;
-            box-shadow: 0 30px 90px rgba(4,25,60,.30) !important;
-            pointer-events: auto !important;
-            touch-action: pan-y !important;
-            transform-origin: bottom center !important;
-          }
-
-          .studentActionPanel .studentActionItem {
-            min-height: 54px !important;
-            padding: 10px !important;
-            touch-action: manipulation !important;
-          }
-
-          .studentActionPanel .studentActionIcon {
-            width: 38px !important;
-            height: 38px !important;
-            flex-basis: 38px !important;
-          }
-
-          .studentActionPanel .studentActionItem b {
-            font-size: 13px !important;
-          }
-
-          .studentActionPanel .studentActionItem small {
-            font-size: 10px !important;
-          }
-        }
-
-        @media (max-width: 390px) {
-          .adminDashboard {
-            padding-left: 7px !important;
-            padding-right: 7px !important;
-          }
-
-          .adminDashboard .dashboardSection,
-          .adminDashboard .studentStatusSection {
-            padding: 10px !important;
-          }
-
-          .adminDashboard .sectionHeading > div:last-child {
-            grid-template-columns: 1fr !important;
-          }
-
-          .adminDashboard .grid3 {
-            gap: 5px !important;
-          }
-
-          .adminDashboard .miniStat {
-            padding-left: 4px !important;
-            padding-right: 4px !important;
+            max-width: none !important;
+            max-height: min(78vh, 620px) !important;
+            border-radius: 22px !important;
           }
         }
       `}</style>
