@@ -1,7 +1,12 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  calculatePaymentFee,
+  formatPaymentAmount,
+  type PaymentFeeMethod,
+} from "@/lib/payment-fees";
 
 declare global {
   interface Window {
@@ -9,7 +14,12 @@ declare global {
   }
 }
 
-type Method = "RAZORPAY" | "PAYPAL" | "WISE" | "BANK_TRANSFER" | "UPI";
+type Method =
+  | "RAZORPAY"
+  | "PAYPAL"
+  | "WISE"
+  | "BANK_TRANSFER"
+  | "UPI";
 
 const METHODS: Method[] = [
   "RAZORPAY",
@@ -19,6 +29,18 @@ const METHODS: Method[] = [
   "UPI",
 ];
 
+function getPaymentBreakdown(
+  amount: unknown,
+  currency: unknown,
+  method: Method
+) {
+  return calculatePaymentFee(
+    amount,
+    currency,
+    method as PaymentFeeMethod
+  );
+}
+
 export default function PaymentClient({
   invoice,
   config,
@@ -26,27 +48,86 @@ export default function PaymentClient({
   invoice: any;
   config: any;
 }) {
-  const [method, setMethod] = useState<Method | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [ref, setRef] = useState("");
-  const [paid, setPaid] = useState(invoice.status === "PAID");
-  const [progress, setProgress] = useState(
-    invoice.status === "PROCESSING" || invoice.status === "VERIFYING"
-  );
-  const [razorpayReady, setRazorpayReady] = useState(false);
+  const [method, setMethod] =
+    useState<Method | null>(null);
 
-  const names = invoice.studentNames || [];
+  const [busy, setBusy] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
+
+  const [ref, setRef] =
+    useState("");
+
+  const [paid, setPaid] =
+    useState(invoice.status === "PAID");
+
+  const [progress, setProgress] =
+    useState(
+      invoice.status === "PROCESSING" ||
+        invoice.status === "VERIFYING"
+    );
+
+  const [razorpayReady, setRazorpayReady] =
+    useState(false);
+
+  const names =
+    invoice.studentNames || [];
+
+  /*
+   * Calculate the fee for the currently
+   * selected payment method.
+   *
+   * IMPORTANT:
+   * invoice.amount remains the original
+   * class fee.
+   */
+  const selectedBreakdown =
+    useMemo(() => {
+      if (!method) {
+        return null;
+      }
+
+      return getPaymentBreakdown(
+        invoice.amount,
+        invoice.currency,
+        method
+      );
+    }, [
+      method,
+      invoice.amount,
+      invoice.currency,
+    ]);
 
   useEffect(() => {
-    const qs = new URLSearchParams(window.location.search);
-    const selected = qs.get("method") as Method | null;
+    const qs =
+      new URLSearchParams(
+        window.location.search
+      );
 
-    if (selected && METHODS.includes(selected)) {
+    const selected =
+      qs.get("method") as Method | null;
+
+    if (
+      selected &&
+      METHODS.includes(selected)
+    ) {
       setMethod(selected);
     }
 
-    if (qs.get("paypal") === "success" && qs.get("token")) {
+    /*
+     * PayPal returns to this page with:
+     *
+     * ?paypal=success&token=PAYPAL_ORDER_ID
+     *
+     * The existing server capture endpoint
+     * then verifies the order.
+     */
+    if (
+      qs.get("paypal") === "success" &&
+      qs.get("token")
+    ) {
       setBusy(true);
 
       fetch(
@@ -55,10 +136,14 @@ export default function PaymentClient({
           : "/api/payments/paypal/capture",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
           body: JSON.stringify({
             token: invoice.token,
-            orderId: qs.get("token"),
+            orderId:
+              qs.get("token"),
           }),
         }
       )
@@ -66,40 +151,76 @@ export default function PaymentClient({
           if (r.ok) {
             setPaid(true);
           } else {
-            const d = await r.json().catch(() => ({}));
-            setMessage(d.error || "PayPal confirmation failed.");
+            const d =
+              await r
+                .json()
+                .catch(() => ({}));
+
+            setMessage(
+              d.error ||
+                "PayPal confirmation failed."
+            );
           }
         })
-        .finally(() => setBusy(false));
+        .finally(() =>
+          setBusy(false)
+        );
     }
-  }, [invoice.token, invoice.type]);
+  }, [
+    invoice.token,
+    invoice.type,
+  ]);
 
   useEffect(() => {
     const onPopState = () => {
-      const qs = new URLSearchParams(window.location.search);
-      const selected = qs.get("method") as Method | null;
+      const qs =
+        new URLSearchParams(
+          window.location.search
+        );
+
+      const selected =
+        qs.get("method") as Method | null;
 
       setMethod(
-        selected && METHODS.includes(selected) ? selected : null
+        selected &&
+          METHODS.includes(selected)
+          ? selected
+          : null
       );
+
       setMessage("");
       setRef("");
     };
 
-    window.addEventListener("popstate", onPopState);
+    window.addEventListener(
+      "popstate",
+      onPopState
+    );
 
     return () => {
-      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener(
+        "popstate",
+        onPopState
+      );
     };
   }, []);
 
-  function openMethod(next: Method) {
+  function openMethod(
+    next: Method
+  ) {
     setMethod(next);
     setMessage("");
     setRef("");
 
-    const url = new URL(window.location.href);
-    url.searchParams.set("method", next);
+    const url =
+      new URL(
+        window.location.href
+      );
+
+    url.searchParams.set(
+      "method",
+      next
+    );
 
     window.history.pushState(
       { method: next },
@@ -118,8 +239,14 @@ export default function PaymentClient({
     setMessage("");
     setRef("");
 
-    const url = new URL(window.location.href);
-    url.searchParams.delete("method");
+    const url =
+      new URL(
+        window.location.href
+      );
+
+    url.searchParams.delete(
+      "method"
+    );
 
     window.history.pushState(
       {},
@@ -134,10 +261,14 @@ export default function PaymentClient({
   }
 
   async function manualSubmit() {
-    if (!method || !ref.trim()) {
+    if (
+      !method ||
+      !ref.trim()
+    ) {
       setMessage(
         "Please enter the payment reference number."
       );
+
       return;
     }
 
@@ -149,19 +280,27 @@ export default function PaymentClient({
         ? "/api/payments/manual-group"
         : "/api/payments/manual";
 
-    const r = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        token: invoice.token,
-        method,
-        reference: ref.trim(),
-      }),
-    });
+    const r = await fetch(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          token: invoice.token,
+          method,
+          reference:
+            ref.trim(),
+        }),
+      }
+    );
 
-    const d = await r.json().catch(() => ({}));
+    const d =
+      await r
+        .json()
+        .catch(() => ({}));
 
     setBusy(false);
 
@@ -188,17 +327,24 @@ export default function PaymentClient({
         ? "/api/payments/razorpay/group-create-order"
         : "/api/payments/razorpay/create-order";
 
-    const r = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        token: invoice.token,
-      }),
-    });
+    const r = await fetch(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          token: invoice.token,
+        }),
+      }
+    );
 
-    const d = await r.json().catch(() => ({}));
+    const d =
+      await r
+        .json()
+        .catch(() => ({}));
 
     if (!r.ok) {
       setBusy(false);
@@ -221,56 +367,79 @@ export default function PaymentClient({
       return;
     }
 
-    const rz = new window.Razorpay({
-      key: d.key,
-      amount: d.amount,
-      currency: d.currency,
-      name: "Global Punjabi Classes",
-      description: `Monthly fee — ${names.join(" & ")}`,
-      order_id: d.orderId,
+    const rz =
+      new window.Razorpay({
+        key: d.key,
+        amount: d.amount,
+        currency: d.currency,
 
-      prefill: {
-        name: "",
-        email: "",
-      },
+        name:
+          "Global Punjabi Classes",
 
-      theme: {
-        color: "#0b2a5b",
-      },
+        description:
+          `Monthly fee — ${names.join(
+            " & "
+          )}`,
 
-      handler: async (response: any) => {
-        const verify = await fetch(
-          invoice.type === "group"
-            ? "/api/payments/razorpay/group-verify"
-            : "/api/payments/razorpay/verify",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              token: invoice.token,
-              ...response,
-            }),
-          }
-        );
+        order_id:
+          d.orderId,
 
-        const vd = await verify
-          .json()
-          .catch(() => ({}));
+        prefill: {
+          name: "",
+          email: "",
+        },
 
-        if (verify.ok) {
-          setPaid(true);
-        } else {
-          setMessage(
-            vd.error ||
-              "Payment verification failed."
-          );
-        }
+        theme: {
+          color: "#0b2a5b",
+        },
 
-        setBusy(false);
-      },
-    });
+        handler:
+          async (
+            response: any
+          ) => {
+            const verify =
+              await fetch(
+                invoice.type ===
+                  "group"
+                  ? "/api/payments/razorpay/group-verify"
+                  : "/api/payments/razorpay/verify",
+                {
+                  method:
+                    "POST",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+                  },
+
+                  body:
+                    JSON.stringify({
+                      token:
+                        invoice.token,
+                      ...response,
+                    }),
+                }
+              );
+
+            const vd =
+              await verify
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (verify.ok) {
+              setPaid(true);
+            } else {
+              setMessage(
+                vd.error ||
+                  "Payment verification failed."
+              );
+            }
+
+            setBusy(false);
+          },
+      });
 
     rz.on(
       "payment.failed",
@@ -278,13 +447,164 @@ export default function PaymentClient({
         setBusy(false);
 
         setMessage(
-          e?.error?.description ||
+          e?.error
+            ?.description ||
             "Razorpay payment failed."
         );
       }
     );
 
     rz.open();
+  }
+
+  /*
+   * PayPal:
+   *
+   * Create the PayPal order through our
+   * existing API and then redirect the
+   * customer to PayPal's approval page.
+   */
+  async function payPayPal() {
+    setBusy(true);
+    setMessage("");
+
+    const endpoint =
+      invoice.type === "group"
+        ? "/api/payments/paypal/group-create-order"
+        : "/api/payments/paypal/create-order";
+
+    try {
+      const r =
+        await fetch(
+          endpoint,
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                token:
+                  invoice.token,
+              }),
+          }
+        );
+
+      const d =
+        await r
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      if (!r.ok) {
+        setBusy(false);
+
+        setMessage(
+          d.error ||
+            "Could not start PayPal."
+        );
+
+        return;
+      }
+
+      const approveLink =
+        Array.isArray(
+          d.links
+        )
+          ? d.links.find(
+              (x: any) =>
+                x?.rel ===
+                "approve"
+            )?.href
+          : null;
+
+      if (!approveLink) {
+        setBusy(false);
+
+        setMessage(
+          "PayPal approval link was not returned."
+        );
+
+        return;
+      }
+
+      window.location.href =
+        approveLink;
+    } catch {
+      setBusy(false);
+
+      setMessage(
+        "Could not start PayPal."
+      );
+    }
+  }
+
+  /*
+   * Wise open payment link.
+   *
+   * Wise allows amount, currency and
+   * description to be pre-filled in
+   * the open payment-link URL.
+   */
+  function getWisePaymentUrl() {
+    if (
+      !config.wisePaymentLink ||
+      !selectedBreakdown
+    ) {
+      return "";
+    }
+
+    const url =
+      new URL(
+        config.wisePaymentLink
+      );
+
+    url.searchParams.set(
+      "amount",
+      selectedBreakdown.totalAmount.toFixed(
+        2
+      )
+    );
+
+    url.searchParams.set(
+      "currency",
+      String(
+        invoice.currency
+      ).toUpperCase()
+    );
+
+    url.searchParams.set(
+      "description",
+      `Global Punjabi Classes — ${names.join(
+        " & "
+      )} — ${invoice.month}`
+    );
+
+    return url.toString();
+  }
+
+  function openWise() {
+    const url =
+      getWisePaymentUrl();
+
+    if (!url) {
+      setMessage(
+        "Wise payment link is not configured."
+      );
+
+      return;
+    }
+
+    window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer"
+    );
   }
 
   if (paid) {
@@ -305,17 +625,20 @@ export default function PaymentClient({
           </h1>
 
           <p>
-            Your payment has been successfully
-            received and verified.
+            Your payment has been
+            successfully received
+            and verified.
           </p>
 
           <div className="paymentSuccessAmount">
-            {invoice.currency} {invoice.amount}
+            {invoice.currency}{" "}
+            {invoice.amount}
           </div>
 
           <small>
-            A receipt/invoice will be sent to
-            the registered email address.
+            A receipt/invoice will
+            be sent to the registered
+            email address.
           </small>
 
         </div>
@@ -330,7 +653,9 @@ export default function PaymentClient({
         src="https://checkout.razorpay.com/v1/checkout.js"
         strategy="afterInteractive"
         onLoad={() =>
-          setRazorpayReady(true)
+          setRazorpayReady(
+            true
+          )
         }
       />
 
@@ -372,7 +697,8 @@ export default function PaymentClient({
             {invoice.month}
           </div>
 
-          {invoice.items?.length > 0 && (
+          {invoice.items?.length >
+            0 && (
             <div className="studentBreakdown">
 
               {invoice.items.map(
@@ -386,8 +712,12 @@ export default function PaymentClient({
                     </span>
 
                     <b>
-                      {invoice.currency}{" "}
-                      {x.amount}
+                      {
+                        invoice.currency
+                      }{" "}
+                      {
+                        x.amount
+                      }
                     </b>
                   </div>
                 )
@@ -396,6 +726,15 @@ export default function PaymentClient({
             </div>
           )}
 
+          {/*
+           * IMPORTANT:
+           *
+           * This is ALWAYS the original
+           * class fee.
+           *
+           * Processing charges are NOT
+           * added to this left-side box.
+           */}
           <div className="paymentTotalBox">
 
             <span>
@@ -464,7 +803,8 @@ export default function PaymentClient({
                   </div>
 
                   <h2>
-                    Choose a payment method
+                    Choose a payment
+                    method
                   </h2>
 
                   <p>
@@ -484,7 +824,9 @@ export default function PaymentClient({
                   title="Razorpay"
                   description="Cards, UPI and supported payment methods."
                   onClick={() =>
-                    openMethod("RAZORPAY")
+                    openMethod(
+                      "RAZORPAY"
+                    )
                   }
                 />
 
@@ -493,7 +835,9 @@ export default function PaymentClient({
                   title="PayPal"
                   description="Secure payment through PayPal."
                   onClick={() =>
-                    openMethod("PAYPAL")
+                    openMethod(
+                      "PAYPAL"
+                    )
                   }
                 />
 
@@ -502,7 +846,9 @@ export default function PaymentClient({
                   title="Wise"
                   description="Pay using Wise Business."
                   onClick={() =>
-                    openMethod("WISE")
+                    openMethod(
+                      "WISE"
+                    )
                   }
                 />
 
@@ -511,22 +857,26 @@ export default function PaymentClient({
                   title="Bank Transfer"
                   description="Transfer the fee directly to our bank account."
                   onClick={() =>
-                    openMethod("BANK_TRANSFER")
+                    openMethod(
+                      "BANK_TRANSFER"
+                    )
                   }
                 />
 
                 <MethodCard
                   icon="U"
                   title="UPI"
-                  description="Pay directly using one of our official UPI IDs."
+                  description="Pay directly using one of our official UPIs."
                   onClick={() =>
-                    openMethod("UPI")
+                    openMethod(
+                      "UPI"
+                    )
                   }
                 />
 
               </div>
 
-              <div className="paymentNotice">
+              <div className="paymentVerification">
 
                 <span>
                   ✓
@@ -538,14 +888,15 @@ export default function PaymentClient({
                     Payment verification
                   </b>
 
-                  <p>
+                  <small>
                     Online payments are
                     confirmed through the
-                    payment provider. Bank
-                    and UPI payments remain
-                    under verification until
+                    payment provider.
+                    Bank and UPI payments
+                    remain under
+                    verification until
                     authorized confirmation.
-                  </p>
+                  </small>
 
                 </div>
 
@@ -553,21 +904,32 @@ export default function PaymentClient({
 
             </>
           ) : (
-
             <MethodScreen
               method={method}
               invoice={invoice}
               config={config}
+              breakdown={
+                selectedBreakdown
+              }
               busy={busy}
               message={message}
               refValue={ref}
               setRef={setRef}
               submit={manualSubmit}
-              payRazorpay={payRazorpay}
-              razorpayReady={razorpayReady}
+              payRazorpay={
+                payRazorpay
+              }
+              payPayPal={
+                payPayPal
+              }
+              openWise={
+                openWise
+              }
+              razorpayReady={
+                razorpayReady
+              }
               goBack={goBack}
             />
-
           )}
 
         </section>
@@ -623,28 +985,35 @@ function MethodScreen({
   method,
   invoice,
   config,
+  breakdown,
   busy,
   message,
   refValue,
   setRef,
   submit,
   payRazorpay,
+  payPayPal,
+  openWise,
   razorpayReady,
   goBack,
 }: {
   method: Method;
   invoice: any;
   config: any;
+  breakdown: ReturnType<
+    typeof calculatePaymentFee
+  > | null;
   busy: boolean;
   message: string;
   refValue: string;
   setRef: (v: string) => void;
   submit: () => void;
   payRazorpay: () => void;
+  payPayPal: () => void;
+  openWise: () => void;
   razorpayReady: boolean;
   goBack: () => void;
 }) {
-
   const titles: Record<
     Method,
     string
@@ -673,7 +1042,7 @@ function MethodScreen({
       "Complete your payment securely through Razorpay.",
 
     PAYPAL:
-      "Use the official PayPal payment page to make your payment.",
+      "Complete your payment securely through PayPal.",
 
     WISE:
       "Use the official Wise Business payment page.",
@@ -692,7 +1061,8 @@ function MethodScreen({
       ? "P"
       : method === "WISE"
       ? "W"
-      : method === "BANK_TRANSFER"
+      : method ===
+        "BANK_TRANSFER"
       ? "B"
       : "U";
 
@@ -730,23 +1100,69 @@ function MethodScreen({
 
       </div>
 
-      <div className="methodAmountBar">
+      {/* FEE BREAKDOWN */}
 
-        <span>
-          Amount to pay
-        </span>
+      {breakdown && (
+        <div className="methodAmountBar">
 
-        <strong>
-          {invoice.currency}{" "}
-          {invoice.amount}
-        </strong>
+          <div className="paymentBreakdown">
 
-      </div>
+            <div className="paymentBreakdownRow">
+
+              <span>
+                Class Fee
+              </span>
+
+              <strong>
+                {formatPaymentAmount(
+                  breakdown.currency,
+                  breakdown.baseAmount
+                )}
+              </strong>
+
+            </div>
+
+            <div className="paymentBreakdownRow">
+
+              <span>
+                Payment Processing Fee
+              </span>
+
+              <strong>
+                {formatPaymentAmount(
+                  breakdown.currency,
+                  breakdown.processingFee
+                )}
+              </strong>
+
+            </div>
+
+            <div className="paymentBreakdownDivider" />
+
+            <div className="paymentBreakdownRow paymentBreakdownTotal">
+
+              <span>
+                Total to Pay
+              </span>
+
+              <strong>
+                {formatPaymentAmount(
+                  breakdown.currency,
+                  breakdown.totalAmount
+                )}
+              </strong>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* RAZORPAY */}
 
-      {method === "RAZORPAY" && (
-
+      {method ===
+        "RAZORPAY" && (
         <div className="methodContentCard">
 
           <div className="methodInfo">
@@ -758,9 +1174,8 @@ function MethodScreen({
             <p>
               Your payment will be
               processed through Razorpay.
-              The payment is verified on
-              the server before your
-              invoice is marked as received.
+              The checkout amount includes
+              the payment processing cost.
             </p>
 
           </div>
@@ -771,72 +1186,65 @@ function MethodScreen({
               busy ||
               !razorpayReady
             }
-            onClick={payRazorpay}
+            onClick={
+              payRazorpay
+            }
           >
 
             {busy
               ? "Opening Secure Checkout…"
               : razorpayReady
-              ? "PAY SECURELY WITH RAZORPAY →"
+              ? "PAY FULL AMOUNT WITH RAZORPAY →"
               : "LOADING SECURE CHECKOUT…"}
 
           </button>
 
         </div>
-
       )}
 
       {/* PAYPAL */}
 
-      {method === "PAYPAL" && (
-
+      {method ===
+        "PAYPAL" && (
         <div className="methodContentCard">
 
           <div className="methodInfo">
 
             <b>
-              PayPal Payment
+              PayPal Secure Payment
             </b>
 
             <p>
-              Use the official PayPal
-              payment page. Because
-              PayPal.Me does not provide
-              automatic server-side payment
-              confirmation, the payment will
-              remain under verification until
-              confirmed.
+              Your PayPal checkout will
+              be created for the full
+              amount shown above, including
+              the payment processing cost.
             </p>
 
           </div>
 
-          <a
+          <button
+            type="button"
             className="btn btnGold methodPrimaryButton"
-            href={
-              config.paypalPaymentLink
+            disabled={busy}
+            onClick={
+              payPayPal
             }
-            target="_blank"
-            rel="noreferrer"
           >
-            CONTINUE TO PAYPAL →
-          </a>
 
-          <ManualBox
-            method="PAYPAL"
-            refValue={refValue}
-            setRef={setRef}
-            submit={submit}
-            busy={busy}
-          />
+            {busy
+              ? "OPENING PAYPAL…"
+              : "PAY FULL AMOUNT WITH PAYPAL →"}
+
+          </button>
 
         </div>
-
       )}
 
       {/* WISE */}
 
-      {method === "WISE" && (
-
+      {method ===
+        "WISE" && (
         <div className="methodContentCard">
 
           <div className="methodInfo">
@@ -846,26 +1254,32 @@ function MethodScreen({
             </b>
 
             <p>
-              {config.wisePaymentLink
-                ? "Open the official Wise payment page and complete the transfer."
-                : "Wise payment instructions will appear here once the Wise Business payment link is configured."}
+              The Wise payment page will
+              open with the total amount,
+              currency and payment
+              description already filled in.
             </p>
 
           </div>
 
           {config.wisePaymentLink && (
-
-            <a
+            <button
+              type="button"
               className="btn btnGold methodPrimaryButton"
-              href={
-                config.wisePaymentLink
+              disabled={busy}
+              onClick={
+                openWise
               }
-              target="_blank"
-              rel="noreferrer"
             >
               CONTINUE TO WISE →
-            </a>
+            </button>
+          )}
 
+          {!config.wisePaymentLink && (
+            <div className="notice paymentMessage">
+              Wise payment link is not
+              configured.
+            </div>
           )}
 
           <ManualBox
@@ -877,13 +1291,12 @@ function MethodScreen({
           />
 
         </div>
-
       )}
 
       {/* BANK TRANSFER */}
 
-      {method === "BANK_TRANSFER" && (
-
+      {method ===
+        "BANK_TRANSFER" && (
         <div className="methodContentCard">
 
           <div className="methodInfo">
@@ -893,10 +1306,9 @@ function MethodScreen({
             </b>
 
             <p>
-              Transfer the exact fee
-              amount to one of the
-              accounts below. After
-              completing the transfer,
+              Transfer the exact fee amount
+              to one of the accounts below.
+              After completing the transfer,
               submit your transaction
               reference.
             </p>
@@ -910,7 +1322,6 @@ function MethodScreen({
                 b: any,
                 i: number
               ) => (
-
                 <div
                   className="bankCard"
                   key={i}
@@ -960,7 +1371,6 @@ function MethodScreen({
                   )}
 
                 </div>
-
               )
             )}
 
@@ -975,13 +1385,12 @@ function MethodScreen({
           />
 
         </div>
-
       )}
 
       {/* UPI */}
 
-      {method === "UPI" && (
-
+      {method ===
+        "UPI" && (
         <div className="methodContentCard">
 
           <div className="methodInfo">
@@ -1003,7 +1412,6 @@ function MethodScreen({
 
             {config.upiIds.map(
               (id: string) => (
-
                 <div
                   className="copyRow"
                   key={id}
@@ -1025,7 +1433,6 @@ function MethodScreen({
                   </button>
 
                 </div>
-
               )
             )}
 
@@ -1040,7 +1447,6 @@ function MethodScreen({
           />
 
         </div>
-
       )}
 
       {message && (
@@ -1070,7 +1476,8 @@ function ManualBox({
     <div className="manualPaymentBox">
 
       <label>
-        Payment reference / tracking number
+        Payment reference /
+        tracking number
       </label>
 
       <input
