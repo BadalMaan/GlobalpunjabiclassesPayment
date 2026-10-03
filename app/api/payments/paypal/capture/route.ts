@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { paypalCaptureOrder } from "@/lib/paypal";
 import { markInvoicePaid } from "@/lib/payment";
+import { calculatePaymentFee } from "@/lib/payment-fees";
 
 export async function POST(
   req: Request
@@ -43,16 +44,21 @@ export async function POST(
      */
     const {
       data: invoice,
-    } = await supabaseAdmin
-      .from("fee_invoices")
-      .select("*")
-      .eq(
-        "secure_token",
-        token
-      )
-      .single();
+      error: invoiceError,
+    } =
+      await supabaseAdmin
+        .from("fee_invoices")
+        .select("*")
+        .eq(
+          "secure_token",
+          token
+        )
+        .single();
 
-    if (!invoice) {
+    if (
+      invoiceError ||
+      !invoice
+    ) {
       return NextResponse.json(
         {
           error:
@@ -67,7 +73,8 @@ export async function POST(
     if (
       String(
         invoice.status
-      ).toUpperCase() === "PAID"
+      ).toUpperCase() ===
+      "PAID"
     ) {
       return NextResponse.json(
         {
@@ -81,8 +88,8 @@ export async function POST(
     }
 
     /*
-     * Make sure the PayPal order being captured
-     * belongs to THIS invoice.
+     * Make sure the PayPal order being
+     * captured belongs to THIS invoice.
      */
     if (
       invoice.paypal_order_id !==
@@ -100,7 +107,8 @@ export async function POST(
     }
 
     /*
-     * Capture the PayPal order server-side.
+     * Capture the PayPal order
+     * server-side.
      */
     const result =
       await paypalCaptureOrder(
@@ -116,7 +124,8 @@ export async function POST(
         ?.captures?.[0];
 
     /*
-     * Payment must actually be completed.
+     * Payment must actually be
+     * completed.
      */
     if (
       !capture ||
@@ -151,13 +160,35 @@ export async function POST(
       ).toUpperCase();
 
     /*
+     * IMPORTANT:
+     *
+     * invoice.amount is the ORIGINAL
+     * class fee.
+     *
+     * PayPal was created using:
+     *
+     * Class Fee
+     * + Processing Fee
+     * = Total Customer Pays
+     *
+     * Calculate the expected total again
+     * on the server.
+     */
+    const breakdown =
+      calculatePaymentFee(
+        invoice.amount,
+        invoice.currency,
+        "PAYPAL"
+      );
+
+    const expectedAmount =
+      breakdown.totalAmount.toFixed(
+        2
+      );
+
+    /*
      * Exact amount check.
      */
-    const expectedAmount =
-      Number(
-        invoice.amount
-      ).toFixed(2);
-
     if (
       providerAmount !==
       expectedAmount
@@ -181,6 +212,16 @@ export async function POST(
               null,
 
             invoiceAmount:
+              Number(
+                invoice.amount
+              ).toFixed(2),
+
+            processingFee:
+              breakdown.processingFee.toFixed(
+                2
+              ),
+
+            expectedTotal:
               expectedAmount,
 
             invoiceCurrency:
@@ -231,6 +272,16 @@ export async function POST(
               null,
 
             invoiceAmount:
+              Number(
+                invoice.amount
+              ).toFixed(2),
+
+            processingFee:
+              breakdown.processingFee.toFixed(
+                2
+              ),
+
+            expectedTotal:
               expectedAmount,
 
             invoiceCurrency:
@@ -256,13 +307,14 @@ export async function POST(
     /*
      * Amount + currency + order all match.
      *
-     * Pass the actual provider-confirmed
-     * values into markInvoicePaid().
+     * Pass the ACTUAL provider-confirmed
+     * TOTAL into markInvoicePaid().
      */
     await markInvoicePaid(
       invoice.id,
       {
-        method: "PAYPAL",
+        method:
+          "PAYPAL",
 
         transactionId:
           capture.id ||
@@ -283,13 +335,25 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       verified: true,
+
       invoiceId:
         invoice.id,
+
       paypalOrderId:
         orderId,
+
       paypalCaptureId:
         capture.id ||
         null,
+
+      baseAmount:
+        breakdown.baseAmount,
+
+      processingFee:
+        breakdown.processingFee,
+
+      totalAmount:
+        breakdown.totalAmount,
     });
   } catch (error: any) {
     console.error(
