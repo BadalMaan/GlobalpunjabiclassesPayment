@@ -34,7 +34,9 @@ function envNumber(
   name: string,
   fallback: number
 ): number {
-  const value = Number(process.env[name]);
+  const value = Number(
+    process.env[name]
+  );
 
   return Number.isFinite(value)
     ? value
@@ -44,9 +46,11 @@ function envNumber(
 export function roundMoney(
   value: number
 ): number {
-  return Math.round(
-    (value + Number.EPSILON) * 100
-  ) / 100;
+  return (
+    Math.round(
+      (value + Number.EPSILON) * 100
+    ) / 100
+  );
 }
 
 function normalizeCurrency(
@@ -60,25 +64,41 @@ function normalizeCurrency(
 /**
  * Payment processing rules.
  *
- * IMPORTANT:
- * Wise is intentionally charged using the
- * highest card-processing percentage every time.
+ * WISE:
  *
- * Australia Wise Business:
+ * We intentionally use the highest Wise
+ * card-processing percentage every time.
+ *
+ * For an Australia-registered Wise Business
+ * account:
+ *
+ * Highest rate:
  * 3.5% + 0.30 AUD
  *
- * For other currencies, the fixed amount can be
- * configured separately through:
+ * The 3.5% percentage is therefore used
+ * for every supported payment currency.
  *
- * PAYMENT_WISE_FIXED_AUD
- * PAYMENT_WISE_FIXED_CAD
- * PAYMENT_WISE_FIXED_USD
- * PAYMENT_WISE_FIXED_NZD
- * PAYMENT_WISE_FIXED_EUR
- * PAYMENT_WISE_FIXED_GBP
+ * IMPORTANT:
  *
- * This avoids incorrectly treating 0.30 AUD as
- * 0.30 USD / CAD / GBP / EUR / NZD.
+ * The fixed Wise charge is NOT automatically
+ * treated as 0.30 in every currency.
+ *
+ * For AUD:
+ *   default = 0.30 AUD
+ *
+ * For other currencies:
+ *   configure the appropriate fixed amount
+ *   using the environment variables below:
+ *
+ *   PAYMENT_WISE_FIXED_CAD
+ *   PAYMENT_WISE_FIXED_USD
+ *   PAYMENT_WISE_FIXED_NZD
+ *   PAYMENT_WISE_FIXED_EUR
+ *   PAYMENT_WISE_FIXED_GBP
+ *
+ * This prevents us from incorrectly charging
+ * 0.30 USD, 0.30 CAD, etc. when the actual
+ * Wise fixed charge is denominated differently.
  */
 export function getPaymentFeeRule(
   currency: unknown,
@@ -89,19 +109,30 @@ export function getPaymentFeeRule(
 
   switch (method) {
     case "WISE": {
-      const fixedName =
+      const fixedEnvironmentName =
         `PAYMENT_WISE_FIXED_${code}`;
 
       const defaultFixed =
-        code === "AUD" ? 0.30 : 0;
+        code === "AUD"
+          ? 0.30
+          : 0;
 
       return {
+        /*
+         * Highest Wise percentage.
+         *
+         * We deliberately use 3.5% every time
+         * rather than trying to determine whether
+         * the customer's card is domestic,
+         * international, consumer or business.
+         */
         percent: envNumber(
           "PAYMENT_WISE_PERCENT",
           3.5
         ),
+
         fixed: envNumber(
-          fixedName,
+          fixedEnvironmentName,
           defaultFixed
         ),
       };
@@ -113,6 +144,7 @@ export function getPaymentFeeRule(
           "PAYMENT_RAZORPAY_PERCENT",
           3.54
         ),
+
         fixed: envNumber(
           `PAYMENT_RAZORPAY_FIXED_${code}`,
           0
@@ -125,6 +157,7 @@ export function getPaymentFeeRule(
           "PAYMENT_PAYPAL_PERCENT",
           4.4
         ),
+
         fixed: envNumber(
           `PAYMENT_PAYPAL_FIXED_${code}`,
           0
@@ -147,24 +180,27 @@ export function getPaymentFeeRule(
 }
 
 /**
- * Calculates the customer-facing amount.
+ * Calculate the customer-facing payment amount.
  *
  * Gross-up formula:
  *
- * total = (base + fixed) / (1 - percentage)
+ * total =
+ *   (base + fixed) / (1 - percentage)
  *
- * This ensures that after the payment processor
- * deducts its percentage + fixed fee, the platform
- * still receives the original class fee.
+ * This means the processor's percentage
+ * and fixed charge are effectively paid by
+ * the customer while the platform receives
+ * the original class fee.
  *
  * Example:
  *
- * Base = 79
- * Fee = 3.5%
+ * Class fee = 79
+ * Wise percentage = 3.5%
+ * Fixed fee = 0.30
  *
- * Customer pays slightly more than 79 so that
- * the processor's fee does not reduce the
- * original class fee.
+ * Customer total is grossed up so that the
+ * remaining amount after Wise's processing
+ * charge is approximately the original 79.
  */
 export function calculatePaymentFee(
   baseAmount: unknown,
@@ -206,15 +242,23 @@ export function calculatePaymentFee(
   const percentage =
     rule.percent / 100;
 
-  let total: number;
+  if (percentage < 0) {
+    throw new Error(
+      "Payment processing percentage cannot be negative"
+    );
+  }
 
-  if (percentage <= 0) {
-    total =
-      base + rule.fixed;
-  } else if (percentage >= 1) {
+  if (percentage >= 1) {
     throw new Error(
       "Payment processing percentage must be less than 100%"
     );
+  }
+
+  let total: number;
+
+  if (percentage === 0) {
+    total =
+      base + rule.fixed;
   } else {
     total =
       (base + rule.fixed) /
@@ -231,23 +275,33 @@ export function calculatePaymentFee(
 
   return {
     method,
+
     currency: code,
+
     baseAmount:
       roundMoney(base),
+
     processingFee,
-    totalAmount: total,
+
+    totalAmount:
+      total,
+
     percent:
       rule.percent,
+
     fixed:
       rule.fixed,
   };
 }
 
+/**
+ * Alias used by payment UI/components.
+ */
 export function getPaymentBreakdown(
   baseAmount: unknown,
   currency: unknown,
   method: PaymentFeeMethod
-) {
+): PaymentBreakdown {
   return calculatePaymentFee(
     baseAmount,
     currency,
@@ -255,6 +309,15 @@ export function getPaymentBreakdown(
   );
 }
 
+/**
+ * Format a payment amount for display.
+ *
+ * Example:
+ *
+ * AUD 79.00
+ * USD 82.50
+ * GBP 64.20
+ */
 export function formatPaymentAmount(
   currency: unknown,
   amount: unknown
@@ -272,6 +335,10 @@ export function formatPaymentAmount(
   return `${code} ${value.toFixed(2)}`;
 }
 
+/**
+ * Check whether a currency is supported
+ * by the payment system.
+ */
 export function isSupportedPaymentCurrency(
   currency: unknown
 ): boolean {
