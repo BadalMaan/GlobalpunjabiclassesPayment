@@ -1,354 +1,876 @@
-export type PaymentFeeMethod =
-  | "RAZORPAY"
-  | "PAYPAL"
-  | "WISE"
-  | "BANK_TRANSFER"
-  | "UPI";
+import { createHmac, timingSafeEqual } from "crypto";
+import { supabaseAdmin } from "./supabase";
+import { makeInvoicePdf } from "./invoice";
+import { sendEmail, paymentSuccessEmail } from "./email";
+import { monthLabel } from "./fees";
+import { calculatePaymentFee } from "./payment-fees";
 
-export type PaymentFeeRule = {
-  percent: number;
-  fixed: number;
-};
-
-export type PaymentBreakdown = {
-  method: PaymentFeeMethod;
-  currency: string;
-  baseAmount: number;
-  processingFee: number;
-  totalAmount: number;
-  percent: number;
-  fixed: number;
-};
-
-const SUPPORTED_CURRENCIES = [
-  "AUD",
-  "CAD",
-  "USD",
-  "NZD",
-  "EUR",
-  "GBP",
-  "INR",
+export const PAYMENT_METHODS = [
+  "RAZORPAY",
+  "PAYPAL",
+  "WISE",
+  "BANK_TRANSFER",
+  "UPI",
 ] as const;
 
-function envNumber(
-  name: string,
-  fallback: number
-): number {
-  const value = Number(
-    process.env[name]
-  );
+export type PaymentMethod =
+  typeof PAYMENT_METHODS[number];
 
-  return Number.isFinite(value)
-    ? value
-    : fallback;
+/**
+ * Payment providers that are verified automatically
+ * by the provider's server response/webhook.
+ */
+export const AUTOMATIC_PAYMENT_METHODS = [
+  "RAZORPAY",
+  "PAYPAL",
+] as const;
+
+export type AutomaticPaymentMethod =
+  typeof AUTOMATIC_PAYMENT_METHODS[number];
+
+export function normalizeMoney(value: unknown) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error("Invalid amount");
+  }
+
+  return n.toFixed(2);
 }
 
-export function roundMoney(
-  value: number
-): number {
-  return (
-    Math.round(
-      (value + Number.EPSILON) * 100
-    ) / 100
-  );
-}
-
-function normalizeCurrency(
-  currency: unknown
-): string {
-  return String(currency || "")
+export function normalizeCurrency(value: unknown) {
+  return String(value || "")
     .trim()
     .toUpperCase();
 }
 
+export function normalizePhone(value?: string | null) {
+  return (value || "").replace(/\D/g, "");
+}
+
+export function normalizeEmail(value?: string | null) {
+  return (value || "").trim().toLowerCase();
+}
+
 /**
- * Payment processing rules.
+ * Verify HMAC signature.
+ */
+export function verifyHmac(
+  raw: string,
+  signature: string | null,
+  secret: string
+) {
+  if (!signature || !secret) {
+    return false;
+  }
+
+  const expected = createHmac(
+    "sha256",
+    secret
+  )
+    .update(raw)
+    .digest("hex");
+
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+
+  return (
+    a.length === b.length &&
+    timingSafeEqual(a, b)
+  );
+}
+
+/**
+ * Compare invoice amount with the amount
+ * actually confirmed by the payment provider.
  *
- * WISE:
+ * Example:
  *
- * We intentionally use the highest Wise
- * card-processing percentage every time.
+ * Invoice = ₹10.00
+ * Provider = ₹1.00
  *
- * For an Australia-registered Wise Business
- * account:
+ * Result = false
+ */
+export function paymentMatchesInvoice(
+  invoice: {
+    amount: unknown;
+    currency: unknown;
+  },
+  provider: {
+    amount: unknown;
+    currency: unknown;
+  }
+) {
+  const invoiceAmount =
+    normalizeMoney(invoice.amount);
+
+  const providerAmount =
+    normalizeMoney(provider.amount);
+
+  const invoiceCurrency =
+    normalizeCurrency(invoice.currency);
+
+  const providerCurrency =
+    normalizeCurrency(provider.currency);
+
+  return (
+    invoiceAmount === providerAmount &&
+    invoiceCurrency === providerCurrency
+  );
+}
+
+/**
+ * Throw if the provider-confirmed payment does not
+ * exactly match the invoice.
+ */
+export function assertPaymentMatchesInvoice(
+  invoice: {
+    amount: unknown;
+    currency: unknown;
+  },
+  provider: {
+    amount: unknown;
+    currency: unknown;
+  }
+) {
+  const invoiceAmount =
+    normalizeMoney(invoice.amount);
+
+  const providerAmount =
+    normalizeMoney(provider.amount);
+
+  const invoiceCurrency =
+    normalizeCurrency(invoice.currency);
+
+  const providerCurrency =
+    normalizeCurrency(provider.currency);
+
+  if (
+    invoiceAmount !== providerAmount
+  ) {
+    throw new Error(
+      `Payment amount mismatch. Invoice requires ${invoiceCurrency} ${invoiceAmount}, but provider confirmed ${providerCurrency} ${providerAmount}.`
+    );
+  }
+
+  if (
+    invoiceCurrency !== providerCurrency
+  ) {
+    throw new Error(
+      `Payment currency mismatch. Invoice requires ${invoiceCurrency}, but provider confirmed ${providerCurrency}.`
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Audit log.
+ */
+export async function logAudit(
+  action: string,
+  entityType: string,
+  entityId: string,
+  actor?: string,
+  metadata?: unknown
+) {
+  await supabaseAdmin
+    .from("audit_logs")
+    .insert({
+      actor: actor || "system",
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      metadata: metadata || null,
+    });
+}
+
+/**
+ * Store provider webhook/payment events.
  *
- * Highest rate:
- * 3.5% + 0.30 AUD
+ * event_id is used for idempotency.
+ */
+export async function logPaymentEvent(
+  invoiceId: string | null,
+  provider: string,
+  eventId: string | null,
+  eventType: string,
+  payload: unknown
+) {
+  if (eventId) {
+    const existing =
+      await supabaseAdmin
+        .from("payment_events")
+        .select("id")
+        .eq("event_id", eventId)
+        .maybeSingle();
+
+    if (existing.data) {
+      return false;
+    }
+  }
+
+  const { error } =
+    await supabaseAdmin
+      .from("payment_events")
+      .insert({
+        invoice_id: invoiceId,
+        provider,
+        event_id: eventId,
+        event_type: eventType,
+        payload,
+      });
+
+  if (
+    error &&
+    error.code !== "23505"
+  ) {
+    throw error;
+  }
+
+  return !error;
+}
+
+/**
+ * Safe provider fields.
  *
- * The 3.5% percentage is therefore used
- * for every supported payment currency.
+ * We intentionally do NOT allow arbitrary providerFields
+ * to overwrite invoice status, amount, currency, etc.
+ */
+function safeProviderFields(
+  method: PaymentMethod,
+  providerFields?: Record<string, unknown>
+) {
+  if (!providerFields) {
+    return {};
+  }
+
+  const allowed =
+    method === "RAZORPAY"
+      ? [
+          "razorpay_payment_id",
+        ]
+      : method === "PAYPAL"
+        ? [
+            "paypal_capture_id",
+          ]
+        : [
+            "payment_reference",
+          ];
+
+  const result: Record<
+    string,
+    unknown
+  > = {};
+
+  for (const key of allowed) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        providerFields,
+        key
+      )
+    ) {
+      result[key] =
+        providerFields[key];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Mark one invoice as PAID.
  *
  * IMPORTANT:
  *
- * The fixed Wise charge is NOT automatically
- * treated as 0.30 in every currency.
+ * RAZORPAY and PAYPAL require the actual provider-confirmed
+ * amount and currency.
  *
- * For AUD:
- *   default = 0.30 AUD
- *
- * For other currencies:
- *   configure the appropriate fixed amount
- *   using the environment variables below:
- *
- *   PAYMENT_WISE_FIXED_CAD
- *   PAYMENT_WISE_FIXED_USD
- *   PAYMENT_WISE_FIXED_NZD
- *   PAYMENT_WISE_FIXED_EUR
- *   PAYMENT_WISE_FIXED_GBP
- *
- * This prevents us from incorrectly charging
- * 0.30 USD, 0.30 CAD, etc. when the actual
- * Wise fixed charge is denominated differently.
+ * BANK_TRANSFER / UPI / WISE can be marked paid by an
+ * authenticated operator after manual verification.
  */
-export function getPaymentFeeRule(
-  currency: unknown,
-  method: PaymentFeeMethod
-): PaymentFeeRule {
-  const code =
-    normalizeCurrency(currency);
+export async function markInvoicePaid(
+  invoiceId: string,
+  input: {
+    method: PaymentMethod;
 
-  switch (method) {
-    case "WISE": {
-      const fixedEnvironmentName =
-        `PAYMENT_WISE_FIXED_${code}`;
+    transactionId?: string | null;
 
-      const defaultFixed =
-        code === "AUD"
-          ? 0.30
-          : 0;
+    paidAt?: string;
 
-      return {
-        /*
-         * Highest Wise percentage.
-         *
-         * We deliberately use 3.5% every time
-         * rather than trying to determine whether
-         * the customer's card is domestic,
-         * international, consumer or business.
-         */
-        percent: envNumber(
-          "PAYMENT_WISE_PERCENT",
-          3.5
-        ),
+    actor?: string;
 
-        fixed: envNumber(
-          fixedEnvironmentName,
-          defaultFixed
-        ),
-      };
+    /**
+     * Actual amount confirmed by Razorpay/PayPal.
+     */
+    providerAmount?: unknown;
+
+    /**
+     * Actual currency confirmed by Razorpay/PayPal.
+     */
+    providerCurrency?: unknown;
+
+    providerFields?: Record<
+      string,
+      unknown
+    >;
+  }
+) {
+  const {
+    data: invoice,
+    error: invoiceError,
+  } =
+    await supabaseAdmin
+      .from("fee_invoices")
+      .select(
+        "*,students(*)"
+      )
+      .eq("id", invoiceId)
+      .single();
+
+  if (invoiceError) {
+    throw invoiceError;
+  }
+
+  if (!invoice) {
+    throw new Error(
+      "Invoice not found"
+    );
+  }
+
+  /**
+   * Idempotency:
+   * If already paid, do not send another receipt
+   * or create another payment event.
+   */
+  if (
+    String(invoice.status).toUpperCase() ===
+    "PAID"
+  ) {
+    return invoice;
+  }
+
+  /**
+   * Automatic providers MUST provide the actual
+   * provider-confirmed amount and currency.
+   */
+  if (
+    input.method === "RAZORPAY" ||
+    input.method === "PAYPAL"
+  ) {
+    if (
+      input.providerAmount ===
+        undefined ||
+      input.providerCurrency ===
+        undefined
+    ) {
+      await logAudit(
+        "PAYMENT_VERIFICATION_REJECTED",
+        "fee_invoice",
+        invoiceId,
+        input.actor || "system",
+        {
+          method: input.method,
+          reason:
+            "Missing provider amount or currency",
+          transactionId:
+            input.transactionId || null,
+        }
+      );
+
+      throw new Error(
+        `${input.method} payment cannot be marked PAID without provider-confirmed amount and currency.`
+      );
     }
 
-    case "RAZORPAY":
-      return {
-        percent: envNumber(
-          "PAYMENT_RAZORPAY_PERCENT",
-          3.54
-        ),
+    /**
+     * Exact amount + currency verification.
+     */
+    try {
+      assertPaymentMatchesInvoice(
+        invoice,
+        {
+          amount:
+            input.providerAmount,
+          currency:
+            input.providerCurrency,
+        }
+      );
+    } catch (error: any) {
+      await logAudit(
+        "PAYMENT_VERIFICATION_REJECTED",
+        "fee_invoice",
+        invoiceId,
+        input.actor || "system",
+        {
+          method: input.method,
+          reason:
+            error?.message ||
+            "Amount or currency mismatch",
+          invoiceAmount:
+            normalizeMoney(
+              invoice.amount
+            ),
+          invoiceCurrency:
+            normalizeCurrency(
+              invoice.currency
+            ),
+          providerAmount:
+            String(
+              input.providerAmount
+            ),
+          providerCurrency:
+            normalizeCurrency(
+              input.providerCurrency
+            ),
+          transactionId:
+            input.transactionId || null,
+        }
+      );
 
-        fixed: envNumber(
-          `PAYMENT_RAZORPAY_FIXED_${code}`,
-          0
-        ),
-      };
-
-    case "PAYPAL":
-      return {
-        percent: envNumber(
-          "PAYMENT_PAYPAL_PERCENT",
-          4.4
-        ),
-
-        fixed: envNumber(
-          `PAYMENT_PAYPAL_FIXED_${code}`,
-          0
-        ),
-      };
-
-    case "BANK_TRANSFER":
-    case "UPI":
-      return {
-        percent: 0,
-        fixed: 0,
-      };
-
-    default:
-      return {
-        percent: 0,
-        fixed: 0,
-      };
-  }
-}
-
-/**
- * Calculate the customer-facing payment amount.
- *
- * Gross-up formula:
- *
- * total =
- *   (base + fixed) / (1 - percentage)
- *
- * This means the processor's percentage
- * and fixed charge are effectively paid by
- * the customer while the platform receives
- * the original class fee.
- *
- * Example:
- *
- * Class fee = 79
- * Wise percentage = 3.5%
- * Fixed fee = 0.30
- *
- * Customer total is grossed up so that the
- * remaining amount after Wise's processing
- * charge is approximately the original 79.
- */
-export function calculatePaymentFee(
-  baseAmount: unknown,
-  currency: unknown,
-  method: PaymentFeeMethod
-): PaymentBreakdown {
-  const base =
-    Number(baseAmount);
-
-  if (
-    !Number.isFinite(base) ||
-    base < 0
-  ) {
-    throw new Error(
-      "Invalid payment amount"
-    );
+      throw error;
+    }
   }
 
-  const code =
-    normalizeCurrency(currency);
+  const paidAt =
+    input.paidAt ||
+    new Date().toISOString();
 
-  if (
-    !SUPPORTED_CURRENCIES.includes(
-      code as
-        (typeof SUPPORTED_CURRENCIES)[number]
-    )
-  ) {
-    throw new Error(
-      `Unsupported payment currency: ${code}`
-    );
-  }
-
-  const rule =
-    getPaymentFeeRule(
-      code,
-      method
-    );
-
-  const percentage =
-    rule.percent / 100;
-
-  if (percentage < 0) {
-    throw new Error(
-      "Payment processing percentage cannot be negative"
-    );
-  }
-
-  if (percentage >= 1) {
-    throw new Error(
-      "Payment processing percentage must be less than 100%"
-    );
-  }
-
-  let total: number;
-
-  if (percentage === 0) {
-    total =
-      base + rule.fixed;
-  } else {
-    total =
-      (base + rule.fixed) /
-      (1 - percentage);
-  }
-
-  total =
-    roundMoney(total);
-
-  const processingFee =
-    roundMoney(
-      total - base
-    );
-
-  return {
-    method,
-
-    currency: code,
-
-    baseAmount:
-      roundMoney(base),
-
-    processingFee,
-
-    totalAmount:
-      total,
-
-    percent:
-      rule.percent,
-
-    fixed:
-      rule.fixed,
+  const update: Record<
+    string,
+    unknown
+  > = {
+    status: "PAID",
+    paid_at: paidAt,
+    payment_verified_at:
+      paidAt,
+    payment_verified_by:
+      input.actor || "system",
+    payment_method:
+      input.method,
+    provider_transaction_id:
+      input.transactionId || null,
   };
-}
 
-/**
- * Alias used by payment UI/components.
- */
-export function getPaymentBreakdown(
-  baseAmount: unknown,
-  currency: unknown,
-  method: PaymentFeeMethod
-): PaymentBreakdown {
-  return calculatePaymentFee(
-    baseAmount,
-    currency,
-    method
-  );
-}
-
-/**
- * Format a payment amount for display.
- *
- * Example:
- *
- * AUD 79.00
- * USD 82.50
- * GBP 64.20
- */
-export function formatPaymentAmount(
-  currency: unknown,
-  amount: unknown
-): string {
-  const code =
-    normalizeCurrency(currency);
-
-  const value =
-    Number(amount);
-
-  if (!Number.isFinite(value)) {
-    return `${code} 0.00`;
-  }
-
-  return `${code} ${value.toFixed(2)}`;
-}
-
-/**
- * Check whether a currency is supported
- * by the payment system.
- */
-export function isSupportedPaymentCurrency(
-  currency: unknown
-): boolean {
-  const code =
-    normalizeCurrency(currency);
-
-  return (
-    SUPPORTED_CURRENCIES.includes(
-      code as
-        (typeof SUPPORTED_CURRENCIES)[number]
+  /**
+   * Only allow known provider-specific fields.
+   */
+  Object.assign(
+    update,
+    safeProviderFields(
+      input.method,
+      input.providerFields
     )
   );
+
+  /**
+   * Update only while invoice is not already PAID.
+   */
+  const {
+    data: updated,
+    error: updateError,
+  } =
+    await supabaseAdmin
+      .from("fee_invoices")
+      .update(update)
+      .eq("id", invoiceId)
+      .neq("status", "PAID")
+      .select(
+        "*,students(*)"
+      )
+      .maybeSingle();
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  /**
+   * Another webhook/request may have paid it
+   * between our initial read and update.
+   */
+  const finalInvoice =
+    updated || invoice;
+
+  /**
+   * Only continue with receipt/audit when this
+   * request actually changed the invoice to PAID.
+   */
+  if (
+    !updated ||
+    String(
+      finalInvoice.status
+    ).toUpperCase() !== "PAID"
+  ) {
+    return finalInvoice;
+  }
+
+  await logAudit(
+    "PAYMENT_RECEIVED",
+    "fee_invoice",
+    invoiceId,
+    input.actor,
+    {
+      method: input.method,
+      transactionId:
+        input.transactionId || null,
+      amount:
+        normalizeMoney(
+          finalInvoice.amount
+        ),
+      currency:
+        normalizeCurrency(
+          finalInvoice.currency
+        ),
+    }
+  );
+
+  /**
+   * Send paid receipt only after successful
+   * payment verification.
+   */
+  if (
+    finalInvoice.students?.parent_email
+  ) {
+    const pdf =
+      makeInvoicePdf({
+        invoiceNumber:
+          finalInvoice.invoice_number,
+
+        studentName:
+          finalInvoice.students
+            .student_name,
+
+        parentName:
+          finalInvoice.students
+            .parent_name,
+
+        monthLabel:
+          monthLabel(
+            finalInvoice.fee_month
+          ),
+
+        amount:
+          String(
+            finalInvoice.amount
+          ),
+
+        currency:
+          finalInvoice.currency,
+
+        paidAt,
+      });
+
+    await sendEmail({
+      to:
+        finalInvoice.students
+          .parent_email,
+
+      subject:
+        `Payment received — ${finalInvoice.invoice_number}`,
+
+      html:
+        paymentSuccessEmail({
+          studentName:
+            finalInvoice.students
+              .student_name,
+
+          monthLabel:
+            monthLabel(
+              finalInvoice.fee_month
+            ),
+
+          amount:
+            String(
+              finalInvoice.amount
+            ),
+
+          currency:
+            finalInvoice.currency,
+
+          invoiceNumber:
+            finalInvoice.invoice_number,
+
+          portalUrl:
+            `${process.env.NEXT_PUBLIC_SITE_URL}/pay/${finalInvoice.secure_token}`,
+        }),
+
+      attachments: [
+        {
+          filename:
+            `${finalInvoice.invoice_number}.pdf`,
+
+          content: pdf,
+
+          contentType:
+            "application/pdf",
+        },
+      ],
+    });
+  }
+
+  return finalInvoice;
+}
+
+/**
+ * Mark a payment group as PAID.
+ *
+ * For Razorpay / PayPal, the caller must supply
+ * the provider-confirmed total amount and currency.
+ */
+export async function markGroupPaid(
+  groupId: string,
+  input: {
+    method: PaymentMethod;
+
+    transactionId?: string | null;
+
+    actor?: string;
+
+    providerAmount?: unknown;
+
+    providerCurrency?: unknown;
+
+    providerFields?: Record<
+      string,
+      unknown
+    >;
+  }
+) {
+  const {
+    data: group,
+    error: groupError,
+  } =
+    await supabaseAdmin
+      .from("payment_groups")
+      .select(
+        "*,payment_group_items(*,fee_invoices(*,students(*)))"
+      )
+      .eq("id", groupId)
+      .single();
+
+  if (groupError) {
+    throw groupError;
+  }
+
+  if (!group) {
+    throw new Error(
+      "Payment group not found"
+    );
+  }
+
+  if (
+    String(group.status).toUpperCase() ===
+    "PAID"
+  ) {
+    return group;
+  }
+
+  /**
+   * Automatic provider verification.
+   *
+   * The provider amount must equal the complete
+   * merged payment group amount.
+   */
+  if (
+    input.method === "RAZORPAY" ||
+    input.method === "PAYPAL"
+  ) {
+    if (
+      input.providerAmount ===
+        undefined ||
+      input.providerCurrency ===
+        undefined
+    ) {
+      await logAudit(
+        "GROUP_PAYMENT_VERIFICATION_REJECTED",
+        "payment_group",
+        groupId,
+        input.actor || "system",
+        {
+          method: input.method,
+          reason:
+            "Missing provider amount or currency",
+          transactionId:
+            input.transactionId || null,
+        }
+      );
+
+      throw new Error(
+        `${input.method} group payment cannot be marked PAID without provider-confirmed amount and currency.`
+      );
+    }
+
+    try {
+      assertPaymentMatchesInvoice(
+        group,
+        {
+          amount:
+            input.providerAmount,
+          currency:
+            input.providerCurrency,
+        }
+      );
+    } catch (error: any) {
+      await logAudit(
+        "GROUP_PAYMENT_VERIFICATION_REJECTED",
+        "payment_group",
+        groupId,
+        input.actor || "system",
+        {
+          method: input.method,
+          reason:
+            error?.message ||
+            "Amount or currency mismatch",
+
+          groupAmount:
+            normalizeMoney(
+              group.amount
+            ),
+
+          groupCurrency:
+            normalizeCurrency(
+              group.currency
+            ),
+
+          providerAmount:
+            String(
+              input.providerAmount
+            ),
+
+          providerCurrency:
+            normalizeCurrency(
+              input.providerCurrency
+            ),
+
+          transactionId:
+            input.transactionId || null,
+        }
+      );
+
+      throw error;
+    }
+  }
+
+  const paidAt =
+    new Date().toISOString();
+
+  const update: Record<
+    string,
+    unknown
+  > = {
+    status: "PAID",
+    paid_at: paidAt,
+    payment_verified_at:
+      paidAt,
+    payment_verified_by:
+      input.actor || "system",
+    payment_method:
+      input.method,
+    provider_transaction_id:
+      input.transactionId || null,
+  };
+
+  Object.assign(
+    update,
+    safeProviderFields(
+      input.method,
+      input.providerFields
+    )
+  );
+
+  const {
+    data: updatedGroup,
+    error: updateError,
+  } =
+    await supabaseAdmin
+      .from("payment_groups")
+      .update(update)
+      .eq("id", groupId)
+      .neq("status", "PAID")
+      .select("*")
+      .maybeSingle();
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  const finalGroup =
+    updatedGroup || group;
+
+  /**
+   * Now mark each individual invoice as paid.
+   *
+   * IMPORTANT:
+   * We pass the actual invoice amount for each child.
+   * The group itself has already been verified against
+   * the provider's TOTAL payment.
+   */
+  for (
+    const item of
+      group.payment_group_items || []
+  ) {
+    const invoice =
+      item.fee_invoices;
+
+    if (!invoice) {
+      continue;
+    }
+
+    await markInvoicePaid(
+      item.invoice_id,
+      {
+        method:
+          input.method,
+
+        transactionId:
+          input.transactionId,
+
+        actor:
+          input.actor,
+
+        /**
+         * Each individual invoice must match
+         * its own amount/currency.
+         *
+         * For a group payment, this is the internal
+         * allocation amount, not the provider total.
+         */
+        providerAmount:
+          invoice.amount,
+
+        providerCurrency:
+          invoice.currency,
+
+        providerFields:
+          input.providerFields,
+      }
+    );
+  }
+
+  await logAudit(
+    "PAYMENT_GROUP_RECEIVED",
+    "payment_group",
+    groupId,
+    input.actor,
+    {
+      method:
+        input.method,
+
+      transactionId:
+        input.transactionId ||
+        null,
+
+      amount:
+        normalizeMoney(
+          group.amount
+        ),
+
+      currency:
+        normalizeCurrency(
+          group.currency
+        ),
+    }
+  );
+
+  return finalGroup;
 }
