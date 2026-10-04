@@ -6,101 +6,61 @@ import {
   markInvoicePaid,
   markGroupPaid,
 } from "@/lib/payment";
+import { calculatePaymentFee } from "@/lib/payment-fees";
 
-export async function POST(
-  req: Request
-) {
+export async function POST(req: Request) {
   try {
-    /*
-     * PayPal webhook signature verification
-     * requires the original request body.
-     */
-    const raw =
-      await req.text();
+    const raw = await req.text();
 
     let body: any;
 
     try {
-      body =
-        JSON.parse(raw);
+      body = JSON.parse(raw);
     } catch {
       return NextResponse.json(
-        {
-          error:
-            "Invalid JSON",
-        },
-        {
-          status: 400,
-        }
+        { error: "Invalid JSON" },
+        { status: 400 }
       );
     }
 
-    /*
-     * PayPal verification headers.
-     */
     const headers = {
       "paypal-auth-algo":
-        req.headers.get(
-          "paypal-auth-algo"
-        ) || "",
+        req.headers.get("paypal-auth-algo") || "",
 
       "paypal-cert-url":
-        req.headers.get(
-          "paypal-cert-url"
-        ) || "",
+        req.headers.get("paypal-cert-url") || "",
 
       "paypal-transmission-id":
-        req.headers.get(
-          "paypal-transmission-id"
-        ) || "",
+        req.headers.get("paypal-transmission-id") || "",
 
       "paypal-transmission-sig":
-        req.headers.get(
-          "paypal-transmission-sig"
-        ) || "",
+        req.headers.get("paypal-transmission-sig") || "",
 
       "paypal-transmission-time":
-        req.headers.get(
-          "paypal-transmission-time"
-        ) || "",
+        req.headers.get("paypal-transmission-time") || "",
     };
 
-    /*
-     * Verify webhook signature.
-     */
-    const valid =
-      await paypalVerifyWebhook(
-        headers,
-        body
-      );
+    const valid = await paypalVerifyWebhook(
+      headers,
+      body
+    );
 
     if (!valid) {
       return NextResponse.json(
-        {
-          error:
-            "Invalid signature",
-        },
-        {
-          status: 401,
-        }
+        { error: "Invalid signature" },
+        { status: 401 }
       );
     }
 
-    const eventId =
-      body?.id || null;
+    const eventId = body?.id || null;
 
-    /*
-     * Store webhook event for idempotency.
-     */
-    const inserted =
-      await logPaymentEvent(
-        null,
-        "PAYPAL",
-        eventId,
-        body?.event_type ||
-          "unknown",
-        body
-      );
+    const inserted = await logPaymentEvent(
+      null,
+      "PAYPAL",
+      eventId,
+      body?.event_type || "unknown",
+      body
+    );
 
     if (!inserted) {
       return NextResponse.json({
@@ -109,9 +69,6 @@ export async function POST(
       });
     }
 
-    /*
-     * We only process completed captures.
-     */
     if (
       body?.event_type !==
       "PAYMENT.CAPTURE.COMPLETED"
@@ -121,72 +78,45 @@ export async function POST(
       });
     }
 
-    const capture =
-      body?.resource;
+    const capture = body?.resource;
 
     if (!capture) {
       return NextResponse.json({
         received: true,
         verified: false,
-        reason:
-          "Missing PayPal capture",
+        reason: "Missing PayPal capture",
       });
     }
 
-    /*
-     * PayPal capture must be COMPLETED.
-     */
-    if (
-      capture.status !==
-      "COMPLETED"
-    ) {
+    if (capture.status !== "COMPLETED") {
       return NextResponse.json({
         received: true,
         verified: false,
-        reason:
-          "Capture not completed",
+        reason: "Capture not completed",
       });
     }
 
-    /*
-     * PayPal provides the original order ID
-     * in supplementary_data.related_ids.
-     */
     const orderId =
-      capture
-        ?.supplementary_data
-        ?.related_ids
-        ?.order_id;
+      capture?.supplementary_data
+        ?.related_ids?.order_id;
 
     if (!orderId) {
       return NextResponse.json({
         received: true,
         verified: false,
-        reason:
-          "Missing PayPal order ID",
+        reason: "Missing PayPal order ID",
       });
     }
 
-    /*
-     * Provider-confirmed values.
-     */
-    const providerAmount =
-      String(
-        capture?.amount?.value ||
-          ""
-      );
+    const providerAmount = String(
+      capture?.amount?.value || ""
+    );
 
-    const providerCurrency =
-      String(
-        capture?.amount
-          ?.currency_code ||
-          ""
-      ).toUpperCase();
+    const providerCurrency = String(
+      capture?.amount?.currency_code || ""
+    ).toUpperCase();
 
-    if (
-      !providerAmount ||
-      !providerCurrency
-    ) {
+    if (!providerAmount || !providerCurrency) {
       return NextResponse.json({
         received: true,
         verified: false,
@@ -200,56 +130,51 @@ export async function POST(
      * INDIVIDUAL INVOICE
      * --------------------------------------------------
      */
-    const {
-      data: invoice,
-    } = await supabaseAdmin
-      .from("fee_invoices")
-      .select("*")
-      .eq(
-        "paypal_order_id",
-        orderId
-      )
-      .maybeSingle();
+
+    const { data: invoice } =
+      await supabaseAdmin
+        .from("fee_invoices")
+        .select("*")
+        .eq("paypal_order_id", orderId)
+        .maybeSingle();
 
     if (invoice) {
-      /*
-       * Exact amount.
-       */
-      const expectedAmount =
-        Number(
-          invoice.amount
-        ).toFixed(2);
+      const breakdown = calculatePaymentFee(
+        Number(invoice.amount),
+        invoice.currency,
+        "PAYPAL"
+      );
 
-      if (
-        providerAmount !==
-        expectedAmount
-      ) {
+      const expectedAmount =
+        breakdown.totalAmount.toFixed(2);
+
+      if (providerAmount !== expectedAmount) {
         await supabaseAdmin
           .from("audit_logs")
           .insert({
             actor: "paypal",
             action:
               "PAYMENT_AMOUNT_MISMATCH",
-            entity_type:
-              "fee_invoice",
-            entity_id:
-              invoice.id,
+            entity_type: "fee_invoice",
+            entity_id: invoice.id,
             metadata: {
-              paypalOrderId:
-                orderId,
-
+              paypalOrderId: orderId,
               paypalCaptureId:
-                capture.id ||
-                null,
+                capture.id || null,
 
               invoiceAmount:
+                Number(invoice.amount).toFixed(2),
+
+              processingFee:
+                breakdown.processingFee.toFixed(2),
+
+              expectedTotal:
                 expectedAmount,
 
               invoiceCurrency:
                 invoice.currency,
 
               providerAmount,
-
               providerCurrency,
             },
           });
@@ -262,14 +187,9 @@ export async function POST(
         });
       }
 
-      /*
-       * Exact currency.
-       */
       if (
         providerCurrency !==
-        String(
-          invoice.currency
-        ).toUpperCase()
+        String(invoice.currency).toUpperCase()
       ) {
         await supabaseAdmin
           .from("audit_logs")
@@ -277,26 +197,26 @@ export async function POST(
             actor: "paypal",
             action:
               "PAYMENT_CURRENCY_MISMATCH",
-            entity_type:
-              "fee_invoice",
-            entity_id:
-              invoice.id,
+            entity_type: "fee_invoice",
+            entity_id: invoice.id,
             metadata: {
-              paypalOrderId:
-                orderId,
-
+              paypalOrderId: orderId,
               paypalCaptureId:
-                capture.id ||
-                null,
+                capture.id || null,
 
               invoiceAmount:
+                Number(invoice.amount).toFixed(2),
+
+              processingFee:
+                breakdown.processingFee.toFixed(2),
+
+              expectedTotal:
                 expectedAmount,
 
               invoiceCurrency:
                 invoice.currency,
 
               providerAmount,
-
               providerCurrency,
             },
           });
@@ -310,27 +230,28 @@ export async function POST(
       }
 
       /*
-       * Everything matches.
+       * The actual PayPal TOTAL has already
+       * been verified above.
        *
-       * Now mark the invoice PAID.
+       * markInvoicePaid() uses the original
+       * invoice amount internally.
        */
       await markInvoicePaid(
         invoice.id,
         {
           method: "PAYPAL",
-
           transactionId:
-            capture.id ||
-            null,
+            capture.id || null,
 
-          providerAmount,
+          providerAmount:
+            Number(invoice.amount),
 
-          providerCurrency,
+          providerCurrency:
+            invoice.currency,
 
           providerFields: {
             paypal_capture_id:
-              capture.id ||
-              null,
+              capture.id || null,
           },
         }
       );
@@ -347,56 +268,51 @@ export async function POST(
      * PAYMENT GROUP
      * --------------------------------------------------
      */
-    const {
-      data: group,
-    } = await supabaseAdmin
-      .from("payment_groups")
-      .select("*")
-      .eq(
-        "paypal_order_id",
-        orderId
-      )
-      .maybeSingle();
+
+    const { data: group } =
+      await supabaseAdmin
+        .from("payment_groups")
+        .select("*")
+        .eq("paypal_order_id", orderId)
+        .maybeSingle();
 
     if (group) {
-      /*
-       * Exact group amount.
-       */
-      const expectedAmount =
-        Number(
-          group.amount
-        ).toFixed(2);
+      const breakdown = calculatePaymentFee(
+        Number(group.amount),
+        group.currency,
+        "PAYPAL"
+      );
 
-      if (
-        providerAmount !==
-        expectedAmount
-      ) {
+      const expectedAmount =
+        breakdown.totalAmount.toFixed(2);
+
+      if (providerAmount !== expectedAmount) {
         await supabaseAdmin
           .from("audit_logs")
           .insert({
             actor: "paypal",
             action:
               "PAYMENT_AMOUNT_MISMATCH",
-            entity_type:
-              "payment_group",
-            entity_id:
-              group.id,
+            entity_type: "payment_group",
+            entity_id: group.id,
             metadata: {
-              paypalOrderId:
-                orderId,
-
+              paypalOrderId: orderId,
               paypalCaptureId:
-                capture.id ||
-                null,
+                capture.id || null,
 
               groupAmount:
+                Number(group.amount).toFixed(2),
+
+              processingFee:
+                breakdown.processingFee.toFixed(2),
+
+              expectedTotal:
                 expectedAmount,
 
               groupCurrency:
                 group.currency,
 
               providerAmount,
-
               providerCurrency,
             },
           });
@@ -409,14 +325,9 @@ export async function POST(
         });
       }
 
-      /*
-       * Exact group currency.
-       */
       if (
         providerCurrency !==
-        String(
-          group.currency
-        ).toUpperCase()
+        String(group.currency).toUpperCase()
       ) {
         await supabaseAdmin
           .from("audit_logs")
@@ -424,26 +335,26 @@ export async function POST(
             actor: "paypal",
             action:
               "PAYMENT_CURRENCY_MISMATCH",
-            entity_type:
-              "payment_group",
-            entity_id:
-              group.id,
+            entity_type: "payment_group",
+            entity_id: group.id,
             metadata: {
-              paypalOrderId:
-                orderId,
-
+              paypalOrderId: orderId,
               paypalCaptureId:
-                capture.id ||
-                null,
+                capture.id || null,
 
               groupAmount:
+                Number(group.amount).toFixed(2),
+
+              processingFee:
+                breakdown.processingFee.toFixed(2),
+
+              expectedTotal:
                 expectedAmount,
 
               groupCurrency:
                 group.currency,
 
               providerAmount,
-
               providerCurrency,
             },
           });
@@ -457,27 +368,28 @@ export async function POST(
       }
 
       /*
-       * Everything matches.
+       * The actual PayPal TOTAL has already
+       * been verified above.
        *
-       * Mark the entire group paid.
+       * markGroupPaid() uses the original
+       * group amount internally.
        */
       await markGroupPaid(
         group.id,
         {
           method: "PAYPAL",
-
           transactionId:
-            capture.id ||
-            null,
+            capture.id || null,
 
-          providerAmount,
+          providerAmount:
+            Number(group.amount),
 
-          providerCurrency,
+          providerCurrency:
+            group.currency,
 
           providerFields: {
             paypal_capture_id:
-              capture.id ||
-              null,
+              capture.id || null,
           },
         }
       );
@@ -489,10 +401,6 @@ export async function POST(
       });
     }
 
-    /*
-     * Valid PayPal webhook, but no matching
-     * invoice/group exists.
-     */
     return NextResponse.json({
       received: true,
       verified: false,
@@ -511,9 +419,7 @@ export async function POST(
           error?.message ||
           "PayPal webhook processing failed",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
