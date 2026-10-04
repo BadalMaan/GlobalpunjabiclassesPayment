@@ -1,38 +1,3 @@
-/**
- * Payment fee calculation
- *
- * The invoice amount remains the ORIGINAL CLASS FEE.
- *
- * Customer-facing payment total:
- *
- *   Class Fee
- * + Processing Fee
- * = Total Customer Pays
- *
- * Percentage-based provider fees are grossed up so that,
- * after the provider deducts its percentage, the business
- * still receives the original class fee.
- *
- * Example:
- *
- * Class fee = 69.00
- * Provider fee = 3%
- *
- * Customer pays:
- * 69 / (1 - 0.03)
- * = 71.13
- *
- * Provider keeps approximately 2.13
- * Business receives approximately 69.00
- *
- * IMPORTANT:
- * Provider rates can depend on the merchant account,
- * payment method, country and currency.
- *
- * Therefore the rates below are intentionally configurable
- * through environment variables.
- */
-
 export type PaymentFeeMethod =
   | "RAZORPAY"
   | "PAYPAL"
@@ -40,28 +5,18 @@ export type PaymentFeeMethod =
   | "BANK_TRANSFER"
   | "UPI";
 
-export type PaymentFeeResult = {
+export type PaymentFeeRule = {
+  percent: number;
+  fixed: number;
+};
+
+export type PaymentBreakdown = {
+  method: PaymentFeeMethod;
+  currency: string;
   baseAmount: number;
   processingFee: number;
   totalAmount: number;
-  currency: string;
-  method: PaymentFeeMethod;
-  percentageRate: number;
-  fixedFee: number;
-};
-
-type FeeRule = {
-  /**
-   * Percentage charged by the provider.
-   *
-   * Example:
-   * 0.03 = 3%
-   */
-  percentage: number;
-
-  /**
-   * Fixed provider charge in the invoice currency.
-   */
+  percent: number;
   fixed: number;
 };
 
@@ -75,98 +30,122 @@ const SUPPORTED_CURRENCIES = [
   "INR",
 ] as const;
 
-export type SupportedCurrency =
-  (typeof SUPPORTED_CURRENCIES)[number];
-
-/**
- * Safely read a percentage from an environment variable.
- *
- * Environment value:
- *
- * PAYMENT_RAZORPAY_PERCENT=3
- *
- * becomes:
- *
- * 0.03
- */
-function envPercent(
-  name: string,
-  fallbackPercent: number
-) {
-  const raw = process.env[name];
-
-  if (raw === undefined || raw === "") {
-    return fallbackPercent / 100;
-  }
-
-  const value = Number(raw);
-
-  if (!Number.isFinite(value) || value < 0) {
-    return fallbackPercent / 100;
-  }
-
-  return value / 100;
-}
-
-/**
- * Safely read a fixed fee from an environment variable.
- */
-function envFixed(
+function envNumber(
   name: string,
   fallback: number
-) {
-  const raw = process.env[name];
+): number {
+  const value = Number(
+    process.env[name]
+  );
 
-  if (raw === undefined || raw === "") {
-    return fallback;
-  }
+  return Number.isFinite(value)
+    ? value
+    : fallback;
+}
 
-  const value = Number(raw);
+export function roundMoney(
+  value: number
+): number {
+  return (
+    Math.round(
+      (value + Number.EPSILON) * 100
+    ) / 100
+  );
+}
 
-  if (!Number.isFinite(value) || value < 0) {
-    return fallback;
-  }
-
-  return value;
+function normalizeCurrency(
+  currency: unknown
+): string {
+  return String(currency || "")
+    .trim()
+    .toUpperCase();
 }
 
 /**
- * Get the provider fee rule.
+ * Payment processing rules.
+ *
+ * WISE:
+ *
+ * We intentionally use the highest Wise
+ * card-processing percentage every time.
+ *
+ * For an Australia-registered Wise Business
+ * account:
+ *
+ * Highest rate:
+ * 3.5% + 0.30 AUD
+ *
+ * The 3.5% percentage is therefore used
+ * for every supported payment currency.
  *
  * IMPORTANT:
  *
- * These defaults are only fallback configuration.
- * Your actual provider/merchant agreement should be
- * used in production by setting the corresponding
- * environment variables.
+ * The fixed Wise charge is NOT automatically
+ * treated as 0.30 in every currency.
+ *
+ * For AUD:
+ *   default = 0.30 AUD
+ *
+ * For other currencies:
+ *   configure the appropriate fixed amount
+ *   using the environment variables below:
+ *
+ *   PAYMENT_WISE_FIXED_CAD
+ *   PAYMENT_WISE_FIXED_USD
+ *   PAYMENT_WISE_FIXED_NZD
+ *   PAYMENT_WISE_FIXED_EUR
+ *   PAYMENT_WISE_FIXED_GBP
+ *
+ * This prevents us from incorrectly charging
+ * 0.30 USD, 0.30 CAD, etc. when the actual
+ * Wise fixed charge is denominated differently.
  */
 export function getPaymentFeeRule(
-  method: PaymentFeeMethod,
-  currency: string
-): FeeRule {
-  const code = String(currency || "")
-    .trim()
-    .toUpperCase();
+  currency: unknown,
+  method: PaymentFeeMethod
+): PaymentFeeRule {
+  const code =
+    normalizeCurrency(currency);
 
   switch (method) {
-    case "RAZORPAY":
+    case "WISE": {
+      const fixedEnvironmentName =
+        `PAYMENT_WISE_FIXED_${code}`;
+
+      const defaultFixed =
+        code === "AUD"
+          ? 0.30
+          : 0;
+
       return {
         /*
-         * Razorpay international-card style fallback:
-         * 3% processing + 18% GST on the processing fee.
+         * Highest Wise percentage.
          *
-         * Effective rate:
-         * 3% × 1.18 = 3.54%
-         *
-         * This can be overridden from Render environment
-         * variables with PAYMENT_RAZORPAY_PERCENT.
+         * We deliberately use 3.5% every time
+         * rather than trying to determine whether
+         * the customer's card is domestic,
+         * international, consumer or business.
          */
-        percentage: envPercent(
+        percent: envNumber(
+          "PAYMENT_WISE_PERCENT",
+          3.5
+        ),
+
+        fixed: envNumber(
+          fixedEnvironmentName,
+          defaultFixed
+        ),
+      };
+    }
+
+    case "RAZORPAY":
+      return {
+        percent: envNumber(
           "PAYMENT_RAZORPAY_PERCENT",
           3.54
         ),
 
-        fixed: envFixed(
+        fixed: envNumber(
           `PAYMENT_RAZORPAY_FIXED_${code}`,
           0
         ),
@@ -174,242 +153,202 @@ export function getPaymentFeeRule(
 
     case "PAYPAL":
       return {
-        /*
-         * PayPal international commercial fallback.
-         *
-         * Override this with:
-         *
-         * PAYMENT_PAYPAL_PERCENT
-         * PAYMENT_PAYPAL_FIXED_AUD
-         * PAYMENT_PAYPAL_FIXED_CAD
-         * PAYMENT_PAYPAL_FIXED_USD
-         * PAYMENT_PAYPAL_FIXED_NZD
-         * PAYMENT_PAYPAL_FIXED_EUR
-         * PAYMENT_PAYPAL_FIXED_GBP
-         * PAYMENT_PAYPAL_FIXED_INR
-         */
-        percentage: envPercent(
+        percent: envNumber(
           "PAYMENT_PAYPAL_PERCENT",
           4.4
         ),
 
-        fixed: envFixed(
+        fixed: envNumber(
           `PAYMENT_PAYPAL_FIXED_${code}`,
           0
         ),
       };
 
-    case "WISE":
-      return {
-        /*
-         * Wise fees vary depending on how the payer pays
-         * and the transaction route.
-         *
-         * Therefore Wise is configurable rather than using
-         * a fake universal fee.
-         *
-         * Set:
-         *
-         * PAYMENT_WISE_PERCENT
-         * PAYMENT_WISE_FIXED_AUD
-         * PAYMENT_WISE_FIXED_CAD
-         * etc.
-         */
-        percentage: envPercent(
-          "PAYMENT_WISE_PERCENT",
-          0
-        ),
-
-        fixed: envFixed(
-          `PAYMENT_WISE_FIXED_${code}`,
-          0
-        ),
-      };
-
     case "BANK_TRANSFER":
-      return {
-        /*
-         * No additional portal fee.
-         */
-        percentage: 0,
-        fixed: 0,
-      };
-
     case "UPI":
       return {
-        /*
-         * No additional portal fee.
-         */
-        percentage: 0,
+        percent: 0,
         fixed: 0,
       };
 
     default:
       return {
-        percentage: 0,
+        percent: 0,
         fixed: 0,
       };
   }
 }
 
 /**
- * Round money to two decimal places.
- */
-export function roundMoney(
-  amount: number
-) {
-  return Math.round(
-    (amount + Number.EPSILON) * 100
-  ) / 100;
-}
-
-/**
- * Calculate the customer payment amount.
+ * Calculate the customer-facing payment amount.
  *
- * For a percentage-based provider fee:
+ * Gross-up formula:
  *
  * total =
  *   (base + fixed) / (1 - percentage)
  *
- * This is the important "gross-up" calculation.
+ * This means the processor's percentage
+ * and fixed charge are effectively paid by
+ * the customer while the platform receives
+ * the original class fee.
+ *
+ * Example:
+ *
+ * Class fee = 79
+ * Wise percentage = 3.5%
+ * Fixed fee = 0.30
+ *
+ * Customer total is grossed up so that the
+ * remaining amount after Wise's processing
+ * charge is approximately the original 79.
  */
 export function calculatePaymentFee(
-  baseAmountInput: unknown,
-  currencyInput: unknown,
+  baseAmount: unknown,
+  currency: unknown,
   method: PaymentFeeMethod
-): PaymentFeeResult {
-  const baseAmount = Number(
-    baseAmountInput
-  );
+): PaymentBreakdown {
+  const base =
+    Number(baseAmount);
 
   if (
-    !Number.isFinite(baseAmount) ||
-    baseAmount <= 0
+    !Number.isFinite(base) ||
+    base < 0
   ) {
     throw new Error(
-      "Invalid payment amount."
+      "Invalid payment amount"
     );
   }
 
-  const currency = String(
-    currencyInput || ""
-  )
-    .trim()
-    .toUpperCase();
-
-  if (!currency) {
-    throw new Error(
-      "Payment currency is required."
-    );
-  }
-
-  const rule = getPaymentFeeRule(
-    method,
-    currency
-  );
+  const code =
+    normalizeCurrency(currency);
 
   if (
-    rule.percentage < 0 ||
-    rule.percentage >= 1
+    !SUPPORTED_CURRENCIES.includes(
+      code as
+        (typeof SUPPORTED_CURRENCIES)[number]
+    )
   ) {
     throw new Error(
-      "Invalid payment processing percentage."
+      `Unsupported payment currency: ${code}`
     );
   }
 
-  const base = roundMoney(
-    baseAmount
-  );
+  const rule =
+    getPaymentFeeRule(
+      code,
+      method
+    );
+
+  const percentage =
+    rule.percent / 100;
+
+  if (percentage < 0) {
+    throw new Error(
+      "Payment processing percentage cannot be negative"
+    );
+  }
+
+  if (percentage >= 1) {
+    throw new Error(
+      "Payment processing percentage must be less than 100%"
+    );
+  }
+
+  let total: number;
+
+  if (percentage === 0) {
+    total =
+      base + rule.fixed;
+  } else {
+    total =
+      (base + rule.fixed) /
+      (1 - percentage);
+  }
+
+  total =
+    roundMoney(total);
 
   const processingFee =
-    rule.percentage === 0
-      ? roundMoney(rule.fixed)
-      : roundMoney(
-          (base + rule.fixed) /
-            (1 - rule.percentage) -
-            base
-        );
-
-  const totalAmount = roundMoney(
-    base + processingFee
-  );
+    roundMoney(
+      total - base
+    );
 
   return {
-    baseAmount: base,
-    processingFee,
-    totalAmount,
-    currency,
     method,
-    percentageRate:
-      rule.percentage,
-    fixedFee: rule.fixed,
+
+    currency: code,
+
+    baseAmount:
+      roundMoney(base),
+
+    processingFee,
+
+    totalAmount:
+      total,
+
+    percent:
+      rule.percent,
+
+    fixed:
+      rule.fixed,
   };
 }
 
 /**
- * Calculate a payment fee using an already-normalized
- * payment method.
+ * Alias used by payment UI/components.
  */
 export function getPaymentBreakdown(
   baseAmount: unknown,
   currency: unknown,
-  method: string
-) {
-  const normalizedMethod =
-    String(method || "")
-      .trim()
-      .toUpperCase() as PaymentFeeMethod;
-
-  const allowed: PaymentFeeMethod[] = [
-    "RAZORPAY",
-    "PAYPAL",
-    "WISE",
-    "BANK_TRANSFER",
-    "UPI",
-  ];
-
-  if (
-    !allowed.includes(
-      normalizedMethod
-    )
-  ) {
-    throw new Error(
-      `Unsupported payment method: ${method}`
-    );
-  }
-
+  method: PaymentFeeMethod
+): PaymentBreakdown {
   return calculatePaymentFee(
     baseAmount,
     currency,
-    normalizedMethod
+    method
   );
 }
 
 /**
- * Format a money amount for the UI.
+ * Format a payment amount for display.
  *
  * Example:
  *
- * AUD 71.13
+ * AUD 79.00
+ * USD 82.50
+ * GBP 64.20
  */
 export function formatPaymentAmount(
-  currency: string,
-  amount: number
-) {
-  return `${String(currency || "")
-    .trim()
-    .toUpperCase()} ${roundMoney(amount).toFixed(2)}`;
+  currency: unknown,
+  amount: unknown
+): string {
+  const code =
+    normalizeCurrency(currency);
+
+  const value =
+    Number(amount);
+
+  if (!Number.isFinite(value)) {
+    return `${code} 0.00`;
+  }
+
+  return `${code} ${value.toFixed(2)}`;
 }
 
 /**
- * Check whether a currency is supported by the portal.
+ * Check whether a currency is supported
+ * by the payment system.
  */
 export function isSupportedPaymentCurrency(
-  currency: string
-) {
-  return SUPPORTED_CURRENCIES.includes(
-    String(currency || "")
-      .trim()
-      .toUpperCase() as SupportedCurrency
+  currency: unknown
+): boolean {
+  const code =
+    normalizeCurrency(currency);
+
+  return (
+    SUPPORTED_CURRENCIES.includes(
+      code as
+        (typeof SUPPORTED_CURRENCIES)[number]
+    )
   );
 }
