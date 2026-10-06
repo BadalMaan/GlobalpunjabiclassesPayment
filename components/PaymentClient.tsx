@@ -29,11 +29,11 @@ const METHODS: Method[] = [
   "UPI",
 ];
 
-function normalizePaymentAmount(
-  amount: unknown
-): number {
+function normalizeDisplayAmount(amount: unknown) {
   if (typeof amount === "number") {
-    return Number.isFinite(amount) ? amount : NaN;
+    return Number.isFinite(amount) && amount > 0
+      ? Math.round((amount + Number.EPSILON) * 100) / 100
+      : null;
   }
 
   if (typeof amount === "string") {
@@ -43,20 +43,21 @@ function normalizePaymentAmount(
       .replace(/[^0-9.-]/g, "");
 
     if (!cleaned) {
-      return NaN;
+      return null;
     }
 
     const value = Number(cleaned);
-    return Number.isFinite(value) ? value : NaN;
-  }
 
-  if (amount && typeof amount === "object") {
-    const value = Number((amount as any).value ?? (amount as any).amount);
-    return Number.isFinite(value) ? value : NaN;
+    return Number.isFinite(value) && value > 0
+      ? Math.round((value + Number.EPSILON) * 100) / 100
+      : null;
   }
 
   const value = Number(amount);
-  return Number.isFinite(value) ? value : NaN;
+
+  return Number.isFinite(value) && value > 0
+    ? Math.round((value + Number.EPSILON) * 100) / 100
+    : null;
 }
 
 function getPaymentBreakdown(
@@ -64,12 +65,50 @@ function getPaymentBreakdown(
   currency: unknown,
   method: Method
 ) {
+  /*
+   * BANK_TRANSFER and UPI are manual methods.
+   * They have ZERO processing fee, so do NOT call
+   * calculatePaymentFee() for these methods.
+   *
+   * This is intentional: manual payment selection must
+   * never crash the payment page because of the processor
+   * fee calculator.
+   */
+  if (
+    method === "BANK_TRANSFER" ||
+    method === "UPI"
+  ) {
+    const baseAmount =
+      normalizeDisplayAmount(amount);
+
+    const currencyValue =
+      String(currency || "")
+        .trim()
+        .toUpperCase();
+
+    if (
+      baseAmount === null ||
+      !currencyValue
+    ) {
+      return null;
+    }
+
+    return {
+      method,
+      currency: currencyValue as any,
+      baseAmount,
+      processingFee: 0,
+      totalAmount: baseAmount,
+      percentageRate: 0,
+      fixedFee: 0,
+    };
+  }
+
   const normalizedAmount =
-    normalizePaymentAmount(amount);
+    normalizeDisplayAmount(amount);
 
   if (
-    !Number.isFinite(normalizedAmount) ||
-    normalizedAmount <= 0
+    normalizedAmount === null
   ) {
     return null;
   }
