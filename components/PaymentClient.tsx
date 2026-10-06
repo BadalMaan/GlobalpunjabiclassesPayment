@@ -29,16 +29,60 @@ const METHODS: Method[] = [
   "UPI",
 ];
 
+function normalizePaymentAmount(
+  amount: unknown
+): number {
+  if (typeof amount === "number") {
+    return Number.isFinite(amount) ? amount : NaN;
+  }
+
+  if (typeof amount === "string") {
+    const cleaned = amount
+      .trim()
+      .replace(/,/g, "")
+      .replace(/[^0-9.-]/g, "");
+
+    if (!cleaned) {
+      return NaN;
+    }
+
+    const value = Number(cleaned);
+    return Number.isFinite(value) ? value : NaN;
+  }
+
+  if (amount && typeof amount === "object") {
+    const value = Number((amount as any).value ?? (amount as any).amount);
+    return Number.isFinite(value) ? value : NaN;
+  }
+
+  const value = Number(amount);
+  return Number.isFinite(value) ? value : NaN;
+}
+
 function getPaymentBreakdown(
   amount: unknown,
   currency: unknown,
   method: Method
 ) {
-  return calculatePaymentFee(
-    amount,
-    currency,
-    method as PaymentFeeMethod
-  );
+  const normalizedAmount =
+    normalizePaymentAmount(amount);
+
+  if (
+    !Number.isFinite(normalizedAmount) ||
+    normalizedAmount <= 0
+  ) {
+    return null;
+  }
+
+  try {
+    return calculatePaymentFee(
+      normalizedAmount,
+      currency,
+      method as PaymentFeeMethod
+    );
+  } catch {
+    return null;
+  }
 }
 
 export default function PaymentClient({
@@ -90,14 +134,14 @@ export default function PaymentClient({
       }
 
       return getPaymentBreakdown(
-        invoice.amount,
-        invoice.currency,
+        invoice?.amount,
+        invoice?.currency,
         method
       );
     }, [
       method,
-      invoice.amount,
-      invoice.currency,
+      invoice?.amount,
+      invoice?.currency,
     ]);
 
   useEffect(() => {
