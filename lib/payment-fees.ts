@@ -210,13 +210,14 @@ function normalizeCurrency(
 }
 
 function normalizeAmount(
-  amount: unknown
+  amount: unknown,
+  allowZero = false
 ) {
   const value = Number(amount);
 
   if (
     !Number.isFinite(value) ||
-    value <= 0
+    (allowZero ? value < 0 : value <= 0)
   ) {
     throw new Error(
       "Invalid payment amount."
@@ -437,7 +438,7 @@ export function formatPaymentAmount(
     normalizeCurrency(currencyInput);
 
   const amount =
-    normalizeAmount(amountInput);
+    normalizeAmount(amountInput, true);
 
   try {
     return new Intl.NumberFormat(
