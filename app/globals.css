@@ -2751,6 +2751,67 @@ textarea:focus-visible {
    ACTION MENU — PREMIUM
    ========================================================= */
 
+.gpcStudentActionPanel {
+  position: fixed !important;
+
+  z-index: 2147483647 !important;
+
+  width: 300px;
+  max-width: min(300px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+
+  overflow-y: auto;
+  box-sizing: border-box;
+
+  padding: 7px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255,255,255,.99),
+      rgba(249,251,254,.99)
+    );
+
+  border: 1px solid #d8e2ed;
+
+  border-radius: 15px;
+
+  box-shadow:
+    0 20px 45px rgba(10,35,70,.14),
+    0 4px 12px rgba(10,35,70,.06),
+    inset 0 1px 0 rgba(255,255,255,.95);
+
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+
+  animation: actionMenuIn .28s var(--ease-out) both;
+  transform-origin: top right;
+
+  scrollbar-width: thin;
+}
+
+.gpcStudentActionPanel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.gpcStudentActionPanel::-webkit-scrollbar-thumb {
+  background: #cbd6e3;
+  border-radius: 999px;
+}
+
+@keyframes actionMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Backward compatibility for any older component using this class. */
 .studentActionPanel {
   position: absolute !important;
 
@@ -2785,19 +2846,6 @@ textarea:focus-visible {
   animation: actionMenuIn .28s var(--ease-out) both;
   transform-origin: top right;
 }
-
-@keyframes actionMenuIn {
-  from {
-    opacity: 0;
-    transform: translateY(-5px) scale(.97);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 
 /* =========================================================
    RESPONSIVE
