@@ -29,6 +29,14 @@ const GROUPS = [
   "Reading Group",
 ];
 
+const MANUAL_PAYMENT_STATUSES = [
+  { value: "PENDING", label: "Pending" },
+  { value: "PAID", label: "Received" },
+  { value: "PROCESSING", label: "In Progress" },
+  { value: "FAILED", label: "Failed" },
+  { value: "REFUNDED", label: "Refunded" },
+];
+
 function statusLabel(status: string) {
   if (status === "PAID") return "RECEIVED";
 
@@ -125,6 +133,15 @@ export default function AdminClient({
 
   const [processView, setProcessView] =
     useState<AnyRecord | null>(null);
+
+  const [statusChangeInvoice, setStatusChangeInvoice] =
+    useState<AnyRecord | null>(null);
+
+  const [statusChangeValue, setStatusChangeValue] =
+    useState("PENDING");
+
+  const [statusChangeBusy, setStatusChangeBusy] =
+    useState(false);
 
   const [sending, setSending] =
     useState<string | null>(null);
@@ -347,20 +364,6 @@ export default function AdminClient({
             item.id === editingStudent.id
               ? data.student
               : item
-          )
-        );
-      }
-
-      // If the current month's invoice is still pending, the API keeps it
-      // synchronized with the student's new fee/currency. Update the local
-      // dashboard state immediately so the table shows the new amount
-      // without requiring a page refresh.
-      if (data.invoice?.id) {
-        setInvoices((current) =>
-          current.map((invoice) =>
-            invoice.id === data.invoice.id
-              ? data.invoice
-              : invoice
           )
         );
       }
@@ -1180,6 +1183,100 @@ export default function AdminClient({
     }
   }
 
+  function openPaymentStatusEditor(invoice: AnyRecord) {
+    setOpenActionsId(null);
+    setStatusChangeInvoice(invoice);
+    setStatusChangeValue(
+      String(invoice?.status || "PENDING").toUpperCase()
+    );
+  }
+
+  function closePaymentStatusEditor() {
+    if (statusChangeBusy) return;
+
+    setStatusChangeInvoice(null);
+  }
+
+  async function savePaymentStatus() {
+    if (!statusChangeInvoice?.id) return;
+
+    const nextStatus = String(
+      statusChangeValue || ""
+    ).toUpperCase();
+
+    if (
+      !MANUAL_PAYMENT_STATUSES.some(
+        (item) => item.value === nextStatus
+      )
+    ) {
+      showToast("Please select a valid payment status.");
+      return;
+    }
+
+    setStatusChangeBusy(true);
+
+    try {
+      const response = await fetch(
+        `/api/admin/payments/${statusChangeInvoice.id}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+          body: JSON.stringify({
+            status: nextStatus,
+          }),
+        }
+      );
+
+      const data = await readJson(response);
+
+      if (!response.ok || data?.ok === false) {
+        showToast(
+          data?.error ||
+            "Could not change the payment status."
+        );
+        return;
+      }
+
+      const updatedInvoice =
+        data?.invoice || {
+          ...statusChangeInvoice,
+          status: nextStatus,
+        };
+
+      setInvoices((current) =>
+        current.map((invoice) =>
+          invoice.id === statusChangeInvoice.id
+            ? updatedInvoice
+            : invoice
+        )
+      );
+
+      setProcessView((current) =>
+        current?.invoice?.id === statusChangeInvoice.id
+          ? {
+              ...current,
+              invoice: updatedInvoice,
+            }
+          : current
+      );
+
+      setStatusChangeInvoice(null);
+
+      showToast(
+        `Payment status changed to ${statusLabel(nextStatus)}.`
+      );
+    } catch {
+      showToast(
+        "Could not connect to the payment status service."
+      );
+    } finally {
+      setStatusChangeBusy(false);
+    }
+  }
+
   async function approveInvoice(
     invoiceId: string
   ) {
@@ -1659,6 +1756,27 @@ export default function AdminClient({
                                   </span>
                                 </button>
                               </>
+                            )}
+
+                            {invoice && (
+                              <button
+                                type="button"
+                                className="studentActionItem"
+                                onClick={() =>
+                                  openPaymentStatusEditor(invoice)
+                                }
+                              >
+                                <span className="studentActionIcon">
+                                  ⇄
+                                </span>
+
+                                <span>
+                                  <b>Change Payment Status</b>
+                                  <small>
+                                    Manually change Pending, Received or other status
+                                  </small>
+                                </span>
+                              </button>
                             )}
 
                             <div
@@ -2339,6 +2457,14 @@ export default function AdminClient({
 
             <option value="PAID">
               Received
+            </option>
+
+            <option value="FAILED">
+              Failed
+            </option>
+
+            <option value="REFUNDED">
+              Refunded
             </option>
           </select>
         </div>
@@ -3425,6 +3551,81 @@ export default function AdminClient({
                   : customFeeLink
                     ? "Create New Link"
                     : "Create Payment Link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusChangeInvoice && (
+        <div className="modalBackdrop">
+          <div className="modal card" style={{ maxWidth: 520 }}>
+            <div className="eyebrow">
+              CHANGE PAYMENT STATUS
+            </div>
+
+            <h2>
+              {statusChangeInvoice.student_name ||
+                statusChangeInvoice.students?.student_name ||
+                "Payment"}
+            </h2>
+
+            <p>
+              Choose the payment status you want to save manually.
+              Setting it to <b>Pending</b> clears the old payment/provider
+              references so the fee can be changed safely.
+            </p>
+
+            <div style={{ marginTop: 18 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                Payment Status
+              </label>
+
+              <select
+                value={statusChangeValue}
+                onChange={(event) =>
+                  setStatusChangeValue(event.target.value)
+                }
+                disabled={statusChangeBusy}
+                style={{ width: "100%" }}
+              >
+                {MANUAL_PAYMENT_STATUSES.map((item) => (
+                  <option
+                    key={item.value}
+                    value={item.value}
+                  >
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="modalActions">
+              <button
+                type="button"
+                className="btn btnGhost"
+                onClick={closePaymentStatusEditor}
+                disabled={statusChangeBusy}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="btn btnGold"
+                onClick={() => void savePaymentStatus()}
+                disabled={statusChangeBusy}
+              >
+                {statusChangeBusy
+                  ? "Saving…"
+                  : "Save Status"}
               </button>
             </div>
           </div>
