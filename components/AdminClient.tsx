@@ -1507,7 +1507,7 @@ export default function AdminClient({
                           typeof document !== "undefined" &&
                           createPortal(
                             <div
-                              className="studentActionPanel"
+                              className="gpcStudentActionPanel"
                             role="menu"
                             onClick={(event) =>
                               event.stopPropagation()
@@ -1517,7 +1517,7 @@ export default function AdminClient({
                               top: actionMenuPosition.top,
                               right: actionMenuPosition.right,
                               zIndex: 2147483647,
-                              width: 260,
+                              width: 300,
                               padding: 8,
                               border:
                                 "1px solid rgba(214,223,235,.95)",
@@ -1829,11 +1829,6 @@ export default function AdminClient({
       }}
     >
       <style>{`
-        .studentActionPanel {
-          animation: gpcActionPanelIn .18s cubic-bezier(.2,.8,.2,1);
-          transform-origin: top right;
-        }
-
         .studentActionItem {
           width: 100%;
           display: flex;
@@ -1962,17 +1957,20 @@ export default function AdminClient({
           }
         }
 
+        .gpcStudentActionPanel {
+          position: fixed !important;
+          width: 300px !important;
+          max-width: min(300px, calc(100vw - 24px)) !important;
+          max-height: calc(100vh - 24px) !important;
+          overflow-y: auto !important;
+          box-sizing: border-box !important;
+          transform-origin: top right;
+          animation: gpcActionPanelIn .18s cubic-bezier(.2,.8,.2,1);
+        }
+
         @media (max-width: 700px) {
-          .studentActionPanel {
-            position: fixed !important;
-            right: 12px !important;
-            left: 12px !important;
-            top: auto !important;
-            bottom: 12px !important;
-            width: auto !important;
-            max-height: min(72vh, 560px);
-            overflow-y: auto;
-            transform-origin: bottom center;
+          .gpcStudentActionPanel {
+            max-width: calc(100vw - 24px) !important;
           }
         }
       `}</style>
