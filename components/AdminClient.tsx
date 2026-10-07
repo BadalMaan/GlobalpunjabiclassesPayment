@@ -351,6 +351,20 @@ export default function AdminClient({
         );
       }
 
+      // If the current month's invoice is still pending, the API keeps it
+      // synchronized with the student's new fee/currency. Update the local
+      // dashboard state immediately so the table shows the new amount
+      // without requiring a page refresh.
+      if (data.invoice?.id) {
+        setInvoices((current) =>
+          current.map((invoice) =>
+            invoice.id === data.invoice.id
+              ? data.invoice
+              : invoice
+          )
+        );
+      }
+
       setAddStudentOpen(false);
       setEditingStudent(null);
       showToast("Student updated successfully.");
