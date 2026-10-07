@@ -29,11 +29,11 @@ const METHODS: Method[] = [
   "UPI",
 ];
 
-function normalizeDisplayAmount(amount: unknown) {
+function normalizePaymentAmount(
+  amount: unknown
+): number {
   if (typeof amount === "number") {
-    return Number.isFinite(amount) && amount > 0
-      ? Math.round((amount + Number.EPSILON) * 100) / 100
-      : null;
+    return Number.isFinite(amount) ? amount : NaN;
   }
 
   if (typeof amount === "string") {
@@ -43,21 +43,20 @@ function normalizeDisplayAmount(amount: unknown) {
       .replace(/[^0-9.-]/g, "");
 
     if (!cleaned) {
-      return null;
+      return NaN;
     }
 
     const value = Number(cleaned);
+    return Number.isFinite(value) ? value : NaN;
+  }
 
-    return Number.isFinite(value) && value > 0
-      ? Math.round((value + Number.EPSILON) * 100) / 100
-      : null;
+  if (amount && typeof amount === "object") {
+    const value = Number((amount as any).value ?? (amount as any).amount);
+    return Number.isFinite(value) ? value : NaN;
   }
 
   const value = Number(amount);
-
-  return Number.isFinite(value) && value > 0
-    ? Math.round((value + Number.EPSILON) * 100) / 100
-    : null;
+  return Number.isFinite(value) ? value : NaN;
 }
 
 function getPaymentBreakdown(
@@ -65,50 +64,12 @@ function getPaymentBreakdown(
   currency: unknown,
   method: Method
 ) {
-  /*
-   * BANK_TRANSFER and UPI are manual methods.
-   * They have ZERO processing fee, so do NOT call
-   * calculatePaymentFee() for these methods.
-   *
-   * This is intentional: manual payment selection must
-   * never crash the payment page because of the processor
-   * fee calculator.
-   */
-  if (
-    method === "BANK_TRANSFER" ||
-    method === "UPI"
-  ) {
-    const baseAmount =
-      normalizeDisplayAmount(amount);
-
-    const currencyValue =
-      String(currency || "")
-        .trim()
-        .toUpperCase();
-
-    if (
-      baseAmount === null ||
-      !currencyValue
-    ) {
-      return null;
-    }
-
-    return {
-      method,
-      currency: currencyValue as any,
-      baseAmount,
-      processingFee: 0,
-      totalAmount: baseAmount,
-      percentageRate: 0,
-      fixedFee: 0,
-    };
-  }
-
   const normalizedAmount =
-    normalizeDisplayAmount(amount);
+    normalizePaymentAmount(amount);
 
   if (
-    normalizedAmount === null
+    !Number.isFinite(normalizedAmount) ||
+    normalizedAmount <= 0
   ) {
     return null;
   }
@@ -1194,59 +1155,140 @@ function MethodScreen({
       {/* FEE BREAKDOWN */}
 
       {breakdown && (
-        <div className="methodAmountBar">
-
-          <div className="paymentBreakdown">
-
-            <div className="paymentBreakdownRow">
-
-              <span>
+        <div
+          className="methodAmountBar"
+          style={{
+            padding: "22px 24px",
+            borderRadius: 18,
+            background: "linear-gradient(135deg, #f7faff 0%, #eef4fa 100%)",
+            border: "1px solid #dbe5ef",
+            boxShadow: "0 8px 24px rgba(11,42,91,.06)",
+          }}
+        >
+          <div
+            className="paymentBreakdown"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 15,
+              width: "100%",
+            }}
+          >
+            <div
+              className="paymentBreakdownRow"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 20,
+                minHeight: 28,
+              }}
+            >
+              <span
+                style={{
+                  color: "#6b7d95",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: ".01em",
+                }}
+              >
                 Class Fee
               </span>
-
-              <strong>
+              <strong
+                style={{
+                  color: "#12345f",
+                  fontSize: 18,
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {formatPaymentAmount(
                   breakdown.currency,
                   breakdown.baseAmount
                 )}
               </strong>
-
             </div>
 
-            <div className="paymentBreakdownRow">
-
-              <span>
+            <div
+              className="paymentBreakdownRow"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 20,
+                minHeight: 28,
+              }}
+            >
+              <span
+                style={{
+                  color: "#6b7d95",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: ".01em",
+                }}
+              >
                 Payment Processing Fee
               </span>
-
-              <strong>
+              <strong
+                style={{
+                  color: "#12345f",
+                  fontSize: 18,
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {formatPaymentAmount(
                   breakdown.currency,
                   breakdown.processingFee
                 )}
               </strong>
-
             </div>
 
-            <div className="paymentBreakdownDivider" />
+            <div
+              className="paymentBreakdownDivider"
+              style={{
+                height: 1,
+                width: "100%",
+                background: "#d7e1ec",
+                margin: "2px 0",
+              }}
+            />
 
-            <div className="paymentBreakdownRow paymentBreakdownTotal">
-
-              <span>
+            <div
+              className="paymentBreakdownRow paymentBreakdownTotal"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 20,
+                minHeight: 34,
+              }}
+            >
+              <span
+                style={{
+                  color: "#173963",
+                  fontSize: 14,
+                  fontWeight: 800,
+                }}
+              >
                 Total to Pay
               </span>
-
-              <strong>
+              <strong
+                style={{
+                  color: "#0d2f5c",
+                  fontSize: 25,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {formatPaymentAmount(
                   breakdown.currency,
                   breakdown.totalAmount
                 )}
               </strong>
-
             </div>
-
           </div>
-
         </div>
       )}
 
