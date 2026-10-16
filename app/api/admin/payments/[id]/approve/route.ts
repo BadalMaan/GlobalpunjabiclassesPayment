@@ -1,4 +1,3 @@
-```ts
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
