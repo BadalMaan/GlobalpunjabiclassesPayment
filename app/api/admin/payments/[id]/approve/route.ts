@@ -1,3 +1,4 @@
+```ts
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -25,34 +26,23 @@ export async function POST(
     );
   }
 
-  try {
-    /*
-     * Load the invoice first.
-     */
-    const {
-      data: invoice,
-      error: invoiceError,
-    } = await supabaseAdmin
+  async function loadInvoice() {
+    const { data, error } = await supabaseAdmin
       .from("fee_invoices")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (invoiceError) {
-      console.error(
-        "Invoice lookup error:",
-        invoiceError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            invoiceError.message ||
-            "Could not load invoice",
-        },
-        { status: 500 }
-      );
+    if (error) {
+      console.error("Invoice lookup error:", error);
+      throw error;
     }
+
+    return data;
+  }
+
+  try {
+    const invoice = await loadInvoice();
 
     if (!invoice) {
       return NextResponse.json(
@@ -61,91 +51,74 @@ export async function POST(
       );
     }
 
-    /*
-     * Already paid:
-     * Do not process it again.
-     */
-    if (
-      String(invoice.status).toUpperCase() ===
-      "PAID"
-    ) {
+    if (String(invoice.status).toUpperCase() === "PAID") {
       return NextResponse.json({
         ok: true,
         alreadyPaid: true,
-        invoice: {
-          id: invoice.id,
-          status: invoice.status,
-          paid_at: invoice.paid_at,
-          payment_method:
-            invoice.payment_method || null,
-          payment_reference:
-            invoice.payment_reference || null,
-        },
+        invoice,
       });
     }
 
-    /*
-     * Manual admin verification is primarily
-     * intended for direct payments such as
-     * Bank Transfer / UPI.
-     *
-     * If a payment method already exists on the
-     * invoice, preserve it.
-     */
     const paymentMethod =
-      invoice.payment_method ||
-      "BANK_TRANSFER";
+      invoice.payment_method || "BANK_TRANSFER";
 
-    const transactionId =
-      invoice.payment_reference || null;
+    const actor = String(session.email || "admin");
 
-    const actor = String(
-      session.email || "admin"
-    );
-
-    /*
-     * Mark the invoice paid through the central
-     * payment helper.
-     *
-     * This keeps the payment update, audit log,
-     * receipt/invoice processing and payment state
-     * consistent with the rest of the application.
-     */
-    await markInvoicePaid(
-      invoice.id,
-      {
+    try {
+      await markInvoicePaid(invoice.id, {
         method: paymentMethod as any,
-        transactionId,
+        transactionId: invoice.payment_reference || null,
         actor,
-      }
-    );
+      });
+    } catch (error) {
+      console.error("markInvoicePaid error:", error);
 
-    /*
-     * Always read the invoice again.
-     *
-     * This prevents the admin UI from assuming
-     * that the update succeeded when the database
-     * contains a different final state.
-     */
-    const {
-      data: updatedInvoice,
-      error: updatedInvoiceError,
-    } = await supabaseAdmin
-      .from("fee_invoices")
-      .select("*")
-      .eq("id", invoice.id)
-      .single();
-
-    if (updatedInvoiceError) {
-      console.error(
-        "Updated invoice lookup error:",
-        updatedInvoiceError
+      // The helper may have saved PAID before a later task failed.
+      // Trust the database's final state, not just the thrown error.
+      const latestInvoice = await loadInvoice().catch(
+        (lookupError) => {
+          console.error(
+            "Final invoice lookup error:",
+            lookupError
+          );
+          return null;
+        }
       );
+
+      if (
+        latestInvoice &&
+        String(latestInvoice.status).toUpperCase() === "PAID"
+      ) {
+        return NextResponse.json({
+          ok: true,
+          alreadyPaid: false,
+          invoice: latestInvoice,
+          warning:
+            "Payment was saved as received, but a follow-up task failed.",
+        });
+      }
 
       return NextResponse.json(
         {
           error:
-            "Payment was processed, but the updated invoice could not be loaded.",
+            error instanceof Error
+              ? error.message
+              : "Could not verify payment",
+        },
+        { status: 500 }
+      );
+    }
+
+    const updatedInvoice = await loadInvoice();
+
+    if (
+      !updatedInvoice ||
+      String(updatedInvoice.status).toUpperCase() !== "PAID"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The payment update could not be confirmed in the database.",
         },
         { status: 500 }
       );
@@ -154,25 +127,20 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       alreadyPaid: false,
-      invoice:
-        updatedInvoice || {
-          ...invoice,
-          status: "PAID",
-        },
+      invoice: updatedInvoice,
     });
-  } catch (error: any) {
-    console.error(
-      "Payment verification error:",
-      error
-    );
+  } catch (error) {
+    console.error("Payment verification route error:", error);
 
     return NextResponse.json(
       {
         error:
-          error?.message ||
-          "Could not verify payment",
+          error instanceof Error
+            ? error.message
+            : "Could not verify payment",
       },
-      { status: 400 }
+      { status: 500 }
     );
   }
 }
+```
