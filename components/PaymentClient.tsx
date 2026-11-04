@@ -153,7 +153,24 @@ export default function PaymentClient({
     const selected =
       qs.get("method") as Method | null;
 
-    if (
+    // A cancelled PayPal checkout can return with paypal=cancel
+    // and an old method/token in the URL. Reset the page so the
+    // parent can choose any payment method again.
+    if (qs.get("paypal") === "cancel") {
+      setMethod(null);
+      setBusy(false);
+      setMessage("");
+      setRef("");
+
+      qs.delete("paypal");
+      qs.delete("token");
+      qs.delete("method");
+
+      const cleanUrl =
+        `${window.location.pathname}${qs.toString() ? `?${qs.toString()}` : ""}${window.location.hash}`;
+
+      window.history.replaceState({}, "", cleanUrl);
+    } else if (
       selected &&
       METHODS.includes(selected)
     ) {
@@ -232,6 +249,7 @@ export default function PaymentClient({
           : null
       );
 
+      setBusy(false);
       setMessage("");
       setRef("");
     };
@@ -280,6 +298,7 @@ export default function PaymentClient({
 
   function goBack() {
     setMethod(null);
+    setBusy(false);
     setMessage("");
     setRef("");
 
@@ -435,6 +454,18 @@ export default function PaymentClient({
 
         theme: {
           color: "#0b2a5b",
+        },
+
+        // Razorpay does not emit payment.failed when the customer
+        // simply closes the checkout window. Always release the
+        // loading state when the modal is dismissed.
+        modal: {
+          ondismiss: () => {
+            setBusy(false);
+            setMessage(
+              "Checkout closed. You can choose another payment method or try again."
+            );
+          },
         },
 
         handler:
