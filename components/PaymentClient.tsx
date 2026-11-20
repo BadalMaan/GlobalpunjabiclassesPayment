@@ -1276,6 +1276,41 @@ function MethodScreen({
             </div>
 
             <div
+              className="paymentBreakdownRow"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 20,
+                minHeight: 28,
+              }}
+            >
+              <span
+                style={{
+                  color: "#6b7d95",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: ".01em",
+                }}
+              >
+                Platform Fee
+              </span>
+              <strong
+                style={{
+                  color: "#12345f",
+                  fontSize: 18,
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {formatPaymentAmount(
+                  breakdown.currency,
+                  breakdown.platformFee
+                )}
+              </strong>
+            </div>
+
+            <div
               className="paymentBreakdownDivider"
               style={{
                 height: 1,
