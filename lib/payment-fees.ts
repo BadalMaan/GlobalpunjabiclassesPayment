@@ -25,6 +25,7 @@ export interface PaymentBreakdown {
 
   baseAmount: number;
   processingFee: number;
+  platformFee: number;
   totalAmount: number;
 
   percentageRate: number;
@@ -123,6 +124,11 @@ const DEFAULT_RAZORPAY_FIXED = 0;
  * Manual methods have no automatic processing fee.
  */
 const DEFAULT_MANUAL_FIXED = 0;
+
+/* Platform fee is calculated on the original class fee.
+ * The rate is intentionally kept internal and is never displayed.
+ */
+const PLATFORM_FEE_PERCENT = 5.21;
 
 /*
  * ------------------------------------------------------------
@@ -406,6 +412,20 @@ export function calculatePaymentFee(
         100
     ) / 100;
 
+  const platformFee =
+    method === "RAZORPAY" ||
+    method === "PAYPAL" ||
+    method === "WISE"
+      ? Math.round(
+          (baseAmount * PLATFORM_FEE_PERCENT / 100 + Number.EPSILON) * 100
+        ) / 100
+      : 0;
+
+  // Add the platform fee after calculating the provider processing fee.
+  totalAmount = Math.round(
+    (totalAmount + platformFee + Number.EPSILON) * 100
+  ) / 100;
+
   return {
     method,
     currency,
@@ -413,6 +433,8 @@ export function calculatePaymentFee(
     baseAmount,
 
     processingFee,
+
+    platformFee,
 
     totalAmount,
 
